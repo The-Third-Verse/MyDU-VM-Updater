@@ -10,6 +10,10 @@
   VirtIO GPU + SPICE (no GPU passthrough), VirtIO net, and a VirtIO-FS share
   that maps the Linux game directory into the guest under tag '${SHARE_TAG}'.
   Runs on qemu:///session so no root is required.
+
+  The firmware/TPM template slots are empty for Windows 10 (legacy BIOS). For
+  Windows 11 (create-vm.sh win11 mode) they are filled with UEFI + Secure Boot
+  and an emulated TPM 2.0, which requires swtpm and OVMF on the host.
 -->
 <domain type='kvm'>
   <name>${VM_NAME}</name>
@@ -25,9 +29,9 @@
 
   <vcpu placement='static'>${VCPUS}</vcpu>
 
-  <os>
+  <os${OS_FIRMWARE_ATTR}>
     <type arch='x86_64' machine='q35'>hvm</type>
-    <boot dev='hd'/>
+${FIRMWARE_BLOCK}    <boot dev='hd'/>
   </os>
 
   <features>
@@ -40,7 +44,7 @@
       <spinlocks state='on' retries='8191'/>
     </hyperv>
     <vmport state='off'/>
-  </features>
+${SMM_FEATURE}  </features>
 
   <cpu mode='host-passthrough' check='none' migratable='on'/>
 
@@ -111,5 +115,5 @@
     <input type='keyboard' bus='usb'/>
     <redirdev bus='usb' type='spicevmc'/>
     <memballoon model='virtio'/>
-  </devices>
+${TPM_DEVICE}  </devices>
 </domain>

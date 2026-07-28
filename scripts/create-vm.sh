@@ -28,6 +28,8 @@ DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/du-updater"
 CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/du-updater/config"
 
 readonly VIRTIO_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso"
+readonly WIN10_ISO_URL="https://www.microsoft.com/en-us/software-download/windows10ISO"
+readonly WIN11_ISO_URL="https://www.microsoft.com/en-us/software-download/windows11"
 
 # Defaults (overridable by flags / existing config).
 VM_NAME="du-updater"
@@ -42,7 +44,16 @@ WIN_ISO=""
 VIRTIO_ISO=""
 FINALIZE=0
 RECREATE=0
+WIN11=0
+RAM_SET=0
+DISK_SET=0
 SNAPSHOT_NAME="clean"
+
+# Firmware/TPM XML fragments injected into the template. Empty = Windows 10 (BIOS).
+OS_FIRMWARE_ATTR=""
+FIRMWARE_BLOCK=""
+SMM_FEATURE=""
+TPM_DEVICE=""
 
 info() { printf '==> %s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
@@ -56,9 +67,12 @@ Usage: $PROG --win-iso PATH [options]
 Provision the Dual Universe updater VM, or finalize it into a clean baseline.
 
 Required for provisioning:
-  --win-iso PATH        Your own official Windows 10 x64 ISO.
+  --win-iso PATH        Your own official Windows ISO (10 x64, or 11 with --win11).
 
 Options:
+  --win11               Provision for Windows 11: UEFI + Secure Boot + TPM 2.0.
+                        Requires swtpm and OVMF on the host. Bumps the default
+                        RAM to 6144 MiB and disk to 64G unless overridden.
   --game-dir DIR        Linux game directory to share into the guest.
                         (Defaults to GAME_DIR from du-updater's config.)
   --virtio-iso PATH     VirtIO-win ISO. Downloaded automatically if omitted.
@@ -93,9 +107,10 @@ parse_args() {
             --virtio-iso)  VIRTIO_ISO="${2:?}"; shift 2 ;;
             --game-dir)    GAME_DIR="${2:?}"; shift 2 ;;
             --disk)        DISK_PATH="${2:?}"; shift 2 ;;
-            --disk-size)   DISK_SIZE="${2:?}"; shift 2 ;;
+            --disk-size)   DISK_SIZE="${2:?}"; DISK_SET=1; shift 2 ;;
             --vcpus)       VCPUS="${2:?}"; shift 2 ;;
-            --ram)         MEM_MIB="${2:?}"; shift 2 ;;
+            --ram)         MEM_MIB="${2:?}"; RAM_SET=1; shift 2 ;;
+            --win11)       WIN11=1; shift ;;
             --vm)          VM_NAME="${2:?}"; shift 2 ;;
             --uri)         LIBVIRT_URI="${2:?}"; shift 2 ;;
             --recreate)    RECREATE=1; shift ;;
@@ -115,6 +130,31 @@ check_deps() {
     require_cmd qemu-img
     require_cmd virt-xml
     require_cmd envsubst
+    if [ "$WIN11" -eq 1 ]; then
+        require_cmd swtpm  # emulated TPM 2.0 backend
+        have_ovmf || warn "Could not find OVMF UEFI firmware; install 'edk2-ovmf'/'ovmf' if the VM fails to boot."
+    fi
+}
+
+have_ovmf() {
+    ls /usr/share/OVMF/OVMF_CODE*.fd \
+       /usr/share/edk2*/*/OVMF_CODE*.fd \
+       /usr/share/qemu/firmware/*.json >/dev/null 2>&1
+}
+
+# Fill the firmware/TPM template slots for Windows 11 (UEFI + Secure Boot + TPM).
+# Left empty for Windows 10 (legacy BIOS).
+configure_firmware() {
+    [ "$WIN11" -eq 1 ] || return 0
+    info "Windows 11 mode: UEFI + Secure Boot + emulated TPM 2.0"
+    OS_FIRMWARE_ATTR=" firmware='efi'"
+    FIRMWARE_BLOCK=$'    <firmware>\n      <feature enabled=\'yes\' name=\'enrolled-keys\'/>\n      <feature enabled=\'yes\' name=\'secure-boot\'/>\n    </firmware>\n    <loader secure=\'yes\'/>\n'
+    SMM_FEATURE=$'    <smm state=\'on\'/>\n'
+    TPM_DEVICE=$'    <tpm model=\'tpm-crd\'>\n      <backend type=\'emulator\' version=\'2.0\'/>\n    </tpm>\n'
+
+    # Windows 11 needs more room than the Win10 defaults.
+    [ "$RAM_SET" -eq 0 ]  && MEM_MIB=6144
+    [ "$DISK_SET" -eq 0 ] && DISK_SIZE="64G"
 }
 
 resolve_paths() {
@@ -164,7 +204,9 @@ render_and_define() {
     info "Rendering domain XML -> $xml"
     VM_NAME="$VM_NAME" MEM_KIB="$mem_kib" VCPUS="$VCPUS" \
     DISK_PATH="$DISK_PATH" GAME_DIR="$GAME_DIR" SHARE_TAG="$SHARE_TAG" \
-        envsubst '${VM_NAME} ${MEM_KIB} ${VCPUS} ${DISK_PATH} ${GAME_DIR} ${SHARE_TAG}' \
+    OS_FIRMWARE_ATTR="$OS_FIRMWARE_ATTR" FIRMWARE_BLOCK="$FIRMWARE_BLOCK" \
+    SMM_FEATURE="$SMM_FEATURE" TPM_DEVICE="$TPM_DEVICE" \
+        envsubst '${VM_NAME} ${MEM_KIB} ${VCPUS} ${DISK_PATH} ${GAME_DIR} ${SHARE_TAG} ${OS_FIRMWARE_ATTR} ${FIRMWARE_BLOCK} ${SMM_FEATURE} ${TPM_DEVICE}' \
         <"$TEMPLATE" >"$xml"
 
     info "Defining libvirt domain '$VM_NAME'"
@@ -245,8 +287,15 @@ main() {
         return 0
     fi
 
-    [ -n "$WIN_ISO" ] || die "provisioning requires --win-iso PATH (your own official Windows ISO)."
+    if [ -z "$WIN_ISO" ]; then
+        die "provisioning requires --win-iso PATH (your own official Windows ISO).
+Download one from Microsoft:
+  Windows 10: $WIN10_ISO_URL
+  Windows 11: $WIN11_ISO_URL  (use with --win11)"
+    fi
     [ -f "$WIN_ISO" ] || die "Windows ISO not found: $WIN_ISO"
+
+    configure_firmware
 
     if virsh_ dominfo "$VM_NAME" >/dev/null 2>&1 && [ "$RECREATE" -eq 0 ]; then
         die "domain '$VM_NAME' already exists. Use --recreate to redefine it, or --finalize."

@@ -8,7 +8,7 @@ Implementation in progress. `doc/Dual_Universe_Linux_Updater_VM_Proposal.md` hol
 
 - `bin/du-updater` — the Linux CLI launcher (VM lifecycle, game-dir config, access check, run-vs-install decision).
 - `libvirt/du-updater.xml.in` — envsubst template for the runtime libvirt domain (authoritative runtime definition).
-- `scripts/create-vm.sh` — provisions the VM (disk, VirtIO ISO, define domain, attach Windows install media) and `--finalize` (eject media + clean snapshot).
+- `scripts/create-vm.sh` — provisions the VM (disk, VirtIO ISO, define domain, attach Windows install media) and `--finalize` (eject media + clean snapshot). Windows 10 (BIOS) by default; `--win11` fills the template's firmware slots with UEFI + Secure Boot + emulated TPM 2.0 (needs `swtpm` + OVMF) and bumps defaults to 6 GB / 64 G.
 
 Still to build: the Windows guest setup PowerShell scripts, and a `.desktop` shortcut.
 

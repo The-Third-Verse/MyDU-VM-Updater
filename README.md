@@ -29,8 +29,10 @@ du-updater (Linux script)
 ## Requirements
 
 - A Linux host with QEMU, KVM, and libvirt
-- An **official Windows ISO that you provide yourself**
-- Suggested VM sizing: 2 vCPU, 4 GB RAM, 32 GB dynamic qcow2 disk
+- An **official Windows ISO that you provide yourself**, downloaded from Microsoft:
+  - Windows 10: <https://www.microsoft.com/en-us/software-download/windows10ISO>
+  - Windows 11: <https://www.microsoft.com/en-us/software-download/windows11> (use `create-vm.sh --win11`; also needs `swtpm` + OVMF for TPM 2.0 / Secure Boot)
+- Suggested VM sizing: 2 vCPU, 4 GB RAM, 32 GB dynamic qcow2 disk (Windows 11 defaults to 6 GB / 64 GB)
 
 ## Status
 
