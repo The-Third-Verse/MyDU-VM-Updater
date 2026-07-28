@@ -174,7 +174,11 @@ install_hint() {
 # /usr/lib/qemu/virtiofsd, which modern libvirt rejects as "unsatisfying".
 have_virtiofsd() {
     command -v virtiofsd >/dev/null 2>&1 && return 0
-    ls /usr/libexec/virtiofsd /usr/lib/virtiofsd /usr/bin/virtiofsd >/dev/null 2>&1
+    local p
+    for p in /usr/libexec/virtiofsd /usr/lib/virtiofsd /usr/bin/virtiofsd; do
+        [ -e "$p" ] && return 0
+    done
+    return 1
 }
 
 # Verify all required tools are present, reporting every missing one at once.

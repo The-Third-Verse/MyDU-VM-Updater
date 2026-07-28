@@ -171,10 +171,19 @@ check_deps() {
     fi
 }
 
+# Return success if any listed path exists. Uses a per-path test rather than a
+# single `ls a b c`, which fails when *any* argument is missing even if others
+# exist. Unmatched globs stay literal and simply fail the -e test.
+any_exists() {
+    local p
+    for p in "$@"; do [ -e "$p" ] && return 0; done
+    return 1
+}
+
 have_ovmf() {
-    ls /usr/share/OVMF/OVMF_CODE*.fd \
-       /usr/share/edk2*/*/OVMF_CODE*.fd \
-       /usr/share/qemu/firmware/*.json >/dev/null 2>&1
+    any_exists /usr/share/OVMF/OVMF_CODE*.fd \
+               /usr/share/edk2*/*/OVMF_CODE*.fd \
+               /usr/share/qemu/firmware/*.json
 }
 
 # The standalone (Rust) VirtIO-FS daemon usually lives outside $PATH (libexec),
@@ -182,7 +191,7 @@ have_ovmf() {
 # /usr/lib/qemu/virtiofsd, which modern libvirt rejects as "unsatisfying".
 have_virtiofsd() {
     command -v virtiofsd >/dev/null 2>&1 && return 0
-    ls /usr/libexec/virtiofsd /usr/lib/virtiofsd /usr/bin/virtiofsd >/dev/null 2>&1
+    any_exists /usr/libexec/virtiofsd /usr/lib/virtiofsd /usr/bin/virtiofsd
 }
 
 # Fill the firmware/TPM template slots for Windows 11 (UEFI + Secure Boot + TPM).
