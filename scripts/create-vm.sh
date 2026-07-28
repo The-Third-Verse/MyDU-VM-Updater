@@ -123,16 +123,51 @@ parse_args() {
 
 virsh_() { virsh --connect "$LIBVIRT_URI" "$@"; }
 
-require_cmd() { command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not installed."; }
+require_cmd() { command -v "$1" >/dev/null 2>&1 || die "'$1' is not installed. Install: $(install_hint "$1")"; }
 
+# Suggest a distro-appropriate install command for a required tool.
+install_hint() {
+    local tool="$1" apt dnf pacman zypper osinfo id like
+    case "$tool" in
+        virsh)        apt="libvirt-clients"; dnf="libvirt-client"; pacman="libvirt";       zypper="libvirt-client" ;;
+        virt-viewer)  apt="virt-viewer";     dnf="virt-viewer";    pacman="virt-viewer";   zypper="virt-viewer" ;;
+        virt-xml)     apt="virtinst";        dnf="virt-install";   pacman="virt-install";  zypper="virt-install" ;;
+        qemu-img)     apt="qemu-utils";      dnf="qemu-img";       pacman="qemu-img";      zypper="qemu-tools" ;;
+        envsubst)     apt="gettext-base";    dnf="gettext";        pacman="gettext";       zypper="gettext-runtime" ;;
+        swtpm)        apt="swtpm";           dnf="swtpm";          pacman="swtpm";         zypper="swtpm" ;;
+        curl)         apt="curl";            dnf="curl";           pacman="curl";          zypper="curl" ;;
+        *)            apt="$tool"; dnf="$tool"; pacman="$tool"; zypper="$tool" ;;
+    esac
+    if [ -r /etc/os-release ]; then
+        osinfo="$( . /etc/os-release 2>/dev/null; printf '%s|%s' "${ID:-}" "${ID_LIKE:-}" )"
+        id="${osinfo%%|*}"; like="${osinfo#*|}"
+    fi
+    case " ${id:-} ${like:-} " in
+        *" debian "*|*" ubuntu "*)            printf 'sudo apt install %s'      "$apt" ;;
+        *" fedora "*|*" rhel "*|*" centos "*) printf 'sudo dnf install %s'      "$dnf" ;;
+        *" arch "*)                           printf 'sudo pacman -S %s'        "$pacman" ;;
+        *" suse "*|*" opensuse "*)            printf 'sudo zypper install %s'   "$zypper" ;;
+        *)                                    printf 'install the "%s" package for your distribution' "$tool" ;;
+    esac
+}
+
+# Verify all required tools are present, reporting every missing one at once.
 check_deps() {
-    require_cmd virsh
-    require_cmd qemu-img
-    require_cmd virt-xml
-    require_cmd envsubst
-    if [ "$WIN11" -eq 1 ]; then
-        require_cmd swtpm  # emulated TPM 2.0 backend
-        have_ovmf || warn "Could not find OVMF UEFI firmware; install 'edk2-ovmf'/'ovmf' if the VM fails to boot."
+    local missing=() tool needed=(virsh qemu-img virt-xml envsubst)
+    [ -z "$VIRTIO_ISO" ] && needed+=(curl)  # only needed to download the VirtIO ISO
+    [ "$WIN11" -eq 1 ]   && needed+=(swtpm) # emulated TPM 2.0 backend
+    for tool in "${needed[@]}"; do
+        command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        { printf 'error: missing required dependencies:\n'
+          for tool in "${missing[@]}"; do printf '  - %-12s install: %s\n' "$tool" "$(install_hint "$tool")"; done
+          printf 'See the README (Dependencies) for the full list.\n'
+        } >&2
+        exit 1
+    fi
+    if [ "$WIN11" -eq 1 ] && ! have_ovmf; then
+        warn "Could not find OVMF UEFI firmware; install 'edk2-ovmf'/'ovmf' if the VM fails to boot."
     fi
 }
 

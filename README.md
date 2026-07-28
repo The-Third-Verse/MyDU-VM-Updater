@@ -28,11 +28,49 @@ du-updater (Linux script)
 
 ## Requirements
 
-- A Linux host with QEMU, KVM, and libvirt
+- A Linux host with QEMU + KVM and libvirt
 - An **official Windows ISO that you provide yourself**, downloaded from Microsoft:
   - Windows 10: <https://www.microsoft.com/en-us/software-download/windows10ISO>
   - Windows 11: <https://www.microsoft.com/en-us/software-download/windows11> (use `create-vm.sh --win11`; also needs `swtpm` + OVMF for TPM 2.0 / Secure Boot)
 - Suggested VM sizing: 2 vCPU, 4 GB RAM, 32 GB dynamic qcow2 disk (Windows 11 defaults to 6 GB / 64 GB)
+
+## Dependencies
+
+Host packages needed by the scripts (both scripts check at startup and print a
+distro-specific install command for anything missing):
+
+| Tool | Provides | Used by |
+|------|----------|---------|
+| `qemu-system-x86_64`, KVM | the hypervisor | runtime |
+| `virsh` | libvirt CLI | both |
+| `virt-viewer` | SPICE window | `du-updater` |
+| `virt-xml` | edit the domain (share path, install media) | `create-vm.sh`, `du-updater` |
+| `qemu-img` | create the qcow2 disk | `create-vm.sh` |
+| `envsubst` | render the domain template | `create-vm.sh` |
+| `curl` | download the VirtIO-win ISO | `create-vm.sh` |
+| `swtpm` + OVMF | TPM 2.0 + UEFI/Secure Boot | `create-vm.sh --win11` |
+
+Install everything in one go:
+
+```bash
+# Debian / Ubuntu
+sudo apt install qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients \
+                 virt-viewer virtinst gettext-base curl swtpm ovmf
+
+# Fedora / RHEL
+sudo dnf install qemu-kvm qemu-img libvirt libvirt-client virt-viewer virt-install \
+                 gettext curl swtpm edk2-ovmf
+
+# Arch
+sudo pacman -S qemu-full libvirt virt-viewer virt-install gettext curl swtpm edk2-ovmf
+
+# openSUSE
+sudo zypper install qemu-kvm qemu-tools libvirt-client virt-viewer virt-install \
+                    gettext-runtime curl swtpm qemu-ovmf-x86_64
+```
+
+Then make sure `libvirtd` is running (`systemctl enable --now libvirtd`) and your
+user is in the `libvirt`/`kvm` groups.
 
 ## Status
 

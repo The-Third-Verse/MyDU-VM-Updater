@@ -32,7 +32,7 @@ SHARE_TAG="${DU_SHARE_TAG:-dushare}"
 # Optional clean snapshot to restore before each launch (nice-to-have).
 CLEAN_SNAPSHOT="${DU_CLEAN_SNAPSHOT:-}"
 # Launcher executable expected inside the game directory.
-LAUNCHER_EXE="${DU_LAUNCHER_EXE:-du-launcher.exe}"
+LAUNCHER_EXE="${DU_LAUNCHER_EXE:-dual-launcher.exe}"
 # Official MyDU installer, used by the guest when the launcher is missing.
 INSTALLER_URL="${DU_INSTALLER_URL:-https://installer-prod.dualthegame.com/mydu/dual-installer.exe}"
 # Sub-directory of the share holding the command file the guest reads.
@@ -140,13 +140,47 @@ parse_args() {
 # --------------------------------------------------------------------------- #
 # Preconditions
 # --------------------------------------------------------------------------- #
-require_cmd() { command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not installed.${2:+ $2}"; }
+require_cmd() { command -v "$1" >/dev/null 2>&1 || die "'$1' is not installed. Install: $(install_hint "$1")"; }
 
 virsh_() { virsh --connect "$LIBVIRT_URI" "$@"; }
 
+# Suggest a distro-appropriate install command for a required tool.
+install_hint() {
+    local tool="$1" apt dnf pacman zypper osinfo id like
+    case "$tool" in
+        virsh)        apt="libvirt-clients"; dnf="libvirt-client"; pacman="libvirt";       zypper="libvirt-client" ;;
+        virt-viewer)  apt="virt-viewer";     dnf="virt-viewer";    pacman="virt-viewer";   zypper="virt-viewer" ;;
+        virt-xml)     apt="virtinst";        dnf="virt-install";   pacman="virt-install";  zypper="virt-install" ;;
+        qemu-img)     apt="qemu-utils";      dnf="qemu-img";       pacman="qemu-img";      zypper="qemu-tools" ;;
+        envsubst)     apt="gettext-base";    dnf="gettext";        pacman="gettext";       zypper="gettext-runtime" ;;
+        swtpm)        apt="swtpm";           dnf="swtpm";          pacman="swtpm";         zypper="swtpm" ;;
+        curl)         apt="curl";            dnf="curl";           pacman="curl";          zypper="curl" ;;
+        *)            apt="$tool"; dnf="$tool"; pacman="$tool"; zypper="$tool" ;;
+    esac
+    if [ -r /etc/os-release ]; then
+        osinfo="$( . /etc/os-release 2>/dev/null; printf '%s|%s' "${ID:-}" "${ID_LIKE:-}" )"
+        id="${osinfo%%|*}"; like="${osinfo#*|}"
+    fi
+    case " ${id:-} ${like:-} " in
+        *" debian "*|*" ubuntu "*)            printf 'sudo apt install %s'      "$apt" ;;
+        *" fedora "*|*" rhel "*|*" centos "*) printf 'sudo dnf install %s'      "$dnf" ;;
+        *" arch "*)                           printf 'sudo pacman -S %s'        "$pacman" ;;
+        *" suse "*|*" opensuse "*)            printf 'sudo zypper install %s'   "$zypper" ;;
+        *)                                    printf 'install the "%s" package for your distribution' "$tool" ;;
+    esac
+}
+
+# Verify all required tools are present, reporting every missing one at once.
 check_deps() {
-    require_cmd virsh "Install libvirt-clients / libvirt."
-    [ "$SILENT" -eq 1 ] || require_cmd virt-viewer "Install virt-viewer for the SPICE window."
+    local missing=() tool
+    command -v virsh >/dev/null 2>&1 || missing+=("virsh")
+    [ "$SILENT" -eq 1 ] || command -v virt-viewer >/dev/null 2>&1 || missing+=("virt-viewer")
+    [ "${#missing[@]}" -eq 0 ] && return 0
+    { printf 'error: missing required dependencies:\n'
+      for tool in "${missing[@]}"; do printf '  - %-12s install: %s\n' "$tool" "$(install_hint "$tool")"; done
+      printf 'See the README (Dependencies) for the full list.\n'
+    } >&2
+    exit 1
 }
 
 resolve_game_dir() {
@@ -377,6 +411,9 @@ main() {
         check_access 1 && exit 0 || exit 1
     fi
 
+    # Fail fast up front if the host is missing required tools.
+    check_deps
+
     # Verify the guest will be able to read/write the shared files.
     if [ "$NO_CHECK" -eq 0 ] && ! check_access 0; then
         prompt_yes_no "Continue despite restricted files?" 0 \
@@ -386,7 +423,6 @@ main() {
     # Decide run-vs-install and write the guest command file.
     plan_action
 
-    check_deps
     ensure_domain_exists
     maybe_revert_snapshot
     reconcile_share

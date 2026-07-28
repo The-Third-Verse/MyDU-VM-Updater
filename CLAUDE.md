@@ -17,7 +17,7 @@ Still to build: the Windows guest setup PowerShell scripts, and a `.desktop` sho
 `du-updater` writes `<game-dir>/.du-updater/command` (KEY=VALUE) for the Windows guest to read on boot:
 - `ACTION=run|install` — run the launcher, or install MyDU first then run.
 - `INSTALLER_URL` — official DU installer (`https://installer-prod.dualthegame.com/mydu/dual-installer.exe`); the guest also needs WebView2.
-- `LAUNCHER_EXE` — launcher exe expected in the game dir (default `du-launcher.exe`).
+- `LAUNCHER_EXE` — launcher exe expected in the game dir (default `dual-launcher.exe`).
 
 The game directory is shared into the guest via VirtIO-FS tag `dushare`, so it's visible identically on both sides (the launcher checks/writes it directly on the Linux side). Session-mode VirtIO-FS exposes files as the invoking user, which is why `du-updater` runs an access (read+write) check before launch.
 
