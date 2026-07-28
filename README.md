@@ -55,6 +55,7 @@ distro-specific install command for anything missing):
 | `envsubst` | render the domain template | `create-vm.sh` |
 | `curl` | download the VirtIO-win ISO | `create-vm.sh` |
 | `swtpm` + OVMF | TPM 2.0 + UEFI/Secure Boot | `create-vm.sh --win11` |
+| `xorriso` (or `genisoimage`/`mkisofs`) | build the unattended config CD | `create-vm.sh --unattended` |
 
 Install everything in one go:
 

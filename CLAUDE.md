@@ -13,7 +13,11 @@ Implementation in progress. `doc/Dual_Universe_Linux_Updater_VM_Proposal.md` hol
 - `windows/Setup-Guest.ps1` — one-time guest provisioning (restricted auto-login user, WinFsp + VirtIO guest tools + VirtioFsSvc, WebView2, registers the boot task). Run as admin while the VirtIO CD is attached, before `--finalize`.
 - `windows/Start-Updater.ps1` — per-login boot script: mounts the share, reads `.du-updater/command`, installs/updates MyDU, runs the launcher, always shuts down (in `finally`) so `du-updater` sees the VM stop.
 
-Still to build: a `.desktop` shortcut, and (optional) an unattended-install pipeline (autounattend.xml) so the VM builds hands-off from the user's ISO.
+- `windows/autounattend.xml.in` — answer-file template for the hands-off path. `create-vm.sh --unattended` renders it (BIOS/UEFI disk layout + w10/w11 driver path chosen from `--win11`), packs it plus the `.ps1` scripts onto a `DUCFG` config CD via xorriso/genisoimage, and boots; Windows self-installs and runs `Setup-Guest.ps1` at first logon. Not yet validated against a live ISO — the manual path is the fallback.
+
+`create-vm.sh` data location is `--data-dir DIR` (default `$XDG_DATA_HOME`/`~/.local/share/du-updater`, per Linux user).
+
+Still to build: a `.desktop` shortcut.
 
 ## Guest control-file contract
 

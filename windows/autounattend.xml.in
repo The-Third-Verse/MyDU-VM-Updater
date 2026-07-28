@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Unattended answer file for the Dual Universe updater guest.
+
+  TEMPLATE: rendered by create-vm.sh in unattended mode, which fills the ${...}
+  placeholders and packs the result (plus the windows/*.ps1 scripts) onto a small
+  config CD labelled DUCFG. Windows Setup auto-reads autounattend.xml from that CD.
+
+  It performs a fully hands-off install:
+    * injects the VirtIO storage driver so the disk is visible (no "Load driver"),
+    * wipes disk 0 and installs the edition selected by the product key,
+    * creates a temporary local admin and auto-logs it in once,
+    * on first logon runs Setup-Guest.ps1 (restricted user, VirtIO-FS, WebView2,
+      boot task) and then shuts the VM down.
+
+  Placeholders: LOCALE, PRODUCT_KEY, COMPUTER_NAME, PROV_USER, PROV_PASS,
+  WINPE_DRIVER_DIR (w10|w11), DISK_CONFIG (firmware-specific), OS_PARTITION_ID.
+
+  NOT YET VALIDATED against a live ISO — the manual path (Setup-Guest.ps1 by hand)
+  remains the guaranteed fallback. See windows/README.md.
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <SetupUILanguage><UILanguage>${LOCALE}</UILanguage></SetupUILanguage>
+      <InputLocale>${LOCALE}</InputLocale>
+      <SystemLocale>${LOCALE}</SystemLocale>
+      <UILanguage>${LOCALE}</UILanguage>
+      <UserLocale>${LOCALE}</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Setup" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+
+      <!-- Inject the VirtIO storage driver during setup. Drive letters vary in
+           WinPE, so list several candidates pointing at the VirtIO CD; Setup
+           ignores the ones that don't exist. -->
+      <DriverPaths>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="1"><Path>D:\viostor\${WINPE_DRIVER_DIR}\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="2"><Path>E:\viostor\${WINPE_DRIVER_DIR}\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="3"><Path>F:\viostor\${WINPE_DRIVER_DIR}\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="4"><Path>G:\viostor\${WINPE_DRIVER_DIR}\amd64</Path></PathAndCredentials>
+      </DriverPaths>
+
+      <DiskConfiguration>
+${DISK_CONFIG}
+      </DiskConfiguration>
+
+      <ImageInstall>
+        <OSImage>
+          <InstallTo><DiskID>0</DiskID><PartitionID>${OS_PARTITION_ID}</PartitionID></InstallTo>
+        </OSImage>
+      </ImageInstall>
+
+      <UserData>
+        <AcceptEula>true</AcceptEula>
+        <FullName>DU Updater</FullName>
+        <Organization>DU Updater</Organization>
+        <ProductKey><Key>${PRODUCT_KEY}</Key></ProductKey>
+      </UserData>
+    </component>
+  </settings>
+
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <ComputerName>${COMPUTER_NAME}</ComputerName>
+    </component>
+  </settings>
+
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <InputLocale>${LOCALE}</InputLocale>
+      <SystemLocale>${LOCALE}</SystemLocale>
+      <UILanguage>${LOCALE}</UILanguage>
+      <UserLocale>${LOCALE}</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+      </OOBE>
+
+      <!-- Temporary admin used only to provision the guest. -->
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            <Name>${PROV_USER}</Name>
+            <Group>Administrators</Group>
+            <Password><Value>${PROV_PASS}</Value><PlainText>true</PlainText></Password>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <Username>${PROV_USER}</Username>
+        <Password><Value>${PROV_PASS}</Value><PlainText>true</PlainText></Password>
+        <LogonCount>1</LogonCount>
+      </AutoLogon>
+
+      <!-- Find the DUCFG config CD (letter varies) and run provisioning as admin,
+           then power off. Setup-Guest.ps1 creates the restricted user, switches
+           auto-login to it, and registers the per-login boot task. -->
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <CommandLine>cmd /c for %i in (D E F G H I) do @if exist %i:\Setup-Guest.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File %i:\Setup-Guest.ps1</CommandLine>
+          <Description>Provision DU updater guest</Description>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <CommandLine>cmd /c shutdown /s /t 5 /c "DU provisioning complete"</CommandLine>
+          <Description>Shut down after provisioning</Description>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+    </component>
+  </settings>
+</unattend>

@@ -9,6 +9,11 @@ installed and while the VirtIO-win CD is still attached (before
 |--------|------|--------------|
 | `Setup-Guest.ps1` | once, as Administrator | restricted auto-login user, WinFsp + VirtIO guest tools (viofs/NetKVM/balloon/qemu-ga), VirtioFsSvc, WebView2, and registers the boot task |
 | `Start-Updater.ps1` | every login (auto) | mounts share → reads the command file → installs/updates MyDU → runs the launcher → shuts down |
+| `autounattend.xml.in` | build-time template | rendered by `create-vm.sh --unattended` onto a config CD; drives a hands-off Windows install that runs `Setup-Guest.ps1` automatically at first logon |
+
+**Two ways to provision.** Run `Setup-Guest.ps1` by hand (below), or let
+`create-vm.sh --unattended` do the whole install + provisioning automatically
+(it puts these scripts on a config CD and calls `Setup-Guest.ps1` for you).
 
 ## How the two sides talk
 

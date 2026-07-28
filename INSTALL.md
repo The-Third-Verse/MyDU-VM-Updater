@@ -53,6 +53,28 @@ scripts/create-vm.sh --win-iso ~/Downloads/Win10_x64.iso \
 
 For Windows 11 add `--win11` (UEFI + Secure Boot + TPM 2.0; defaults to 6 GB / 64 GB).
 
+By default the disk, ISOs and domain XML live under
+`~/.local/share/du-updater` (per Linux user). Put them elsewhere with
+`--data-dir /path` (or set `$XDG_DATA_HOME`).
+
+### Fast path: fully automatic install
+
+Add **`--unattended`** and the whole thing is hands-off — no clicking through
+Windows Setup, no manual VirtIO driver step, and the guest provisioning
+(`Setup-Guest.ps1`) runs by itself:
+
+```bash
+scripts/create-vm.sh --unattended \
+                     --win-iso ~/Downloads/Win10_x64.iso \
+                     --game-dir ~/Games/DualUniverse
+```
+
+It builds an `autounattend.xml` config CD, installs Windows, creates the
+restricted user, installs WinFsp/WebView2/guest tools, and powers the VM off when
+done. Wait for it to shut off, then jump to step 5 (finalize). Needs an ISO
+authoring tool (`xorriso`, `genisoimage`, or `mkisofs`). If you'd rather do it by
+hand, skip `--unattended` and follow step 4.
+
 This creates the qcow2 disk, downloads the VirtIO-win driver ISO, defines the
 libvirt domain, attaches the Windows and VirtIO ISOs as boot CDs, and starts the
 VM. Open the console:
