@@ -31,8 +31,10 @@
 
   <os${OS_FIRMWARE_ATTR}>
     <type arch='x86_64' machine='q35'>hvm</type>
-${FIRMWARE_BLOCK}    <boot dev='hd'/>
-  </os>
+${FIRMWARE_BLOCK}  </os>
+  <!-- Boot order is set per-device (disk boot order='3'); create-vm.sh gives the
+       install CD-ROMs order 1 and 2. Do NOT add <os><boot> — libvirt rejects
+       mixing os/boot with per-device boot elements. -->
 
   <features>
     <acpi/>
