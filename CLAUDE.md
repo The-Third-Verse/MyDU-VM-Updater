@@ -4,7 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current State
 
-This repository currently contains **only a proposal/spec document** — `doc/Dual_Universe_Linux_Updater_VM_Proposal.md`. There is no source code, build system, or git repository yet. The task is to implement the system described in that proposal from scratch.
+Implementation in progress. `doc/Dual_Universe_Linux_Updater_VM_Proposal.md` holds the full spec (the `doc/` folder is git-ignored). Built so far:
+
+- `bin/du-updater` — the Linux CLI launcher (VM lifecycle, game-dir config, access check, run-vs-install decision).
+- `libvirt/du-updater.xml.in` — envsubst template for the runtime libvirt domain (authoritative runtime definition).
+- `scripts/create-vm.sh` — provisions the VM (disk, VirtIO ISO, define domain, attach Windows install media) and `--finalize` (eject media + clean snapshot).
+
+Still to build: the Windows guest setup PowerShell scripts, and a `.desktop` shortcut.
+
+## Guest control-file contract
+
+`du-updater` writes `<game-dir>/.du-updater/command` (KEY=VALUE) for the Windows guest to read on boot:
+- `ACTION=run|install` — run the launcher, or install MyDU first then run.
+- `INSTALLER_URL` — official DU installer (`https://installer-prod.dualthegame.com/mydu/dual-installer.exe`); the guest also needs WebView2.
+- `LAUNCHER_EXE` — launcher exe expected in the game dir (default `du-launcher.exe`).
+
+The game directory is shared into the guest via VirtIO-FS tag `dushare`, so it's visible identically on both sides (the launcher checks/writes it directly on the Linux side). Session-mode VirtIO-FS exposes files as the invoking user, which is why `du-updater` runs an access (read+write) check before launch.
 
 ## Project Goal
 

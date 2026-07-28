@@ -34,7 +34,7 @@ du-updater (Linux script)
 
 ## Status
 
-Early stage — see [`doc/`](doc/) for the full design proposal.
+Early stage — actively under development.
 
 ## Licensing note
 

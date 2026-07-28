@@ -1,0 +1,407 @@
+#!/usr/bin/env bash
+#
+# du-updater — launch the Dual Universe Windows updater inside a hidden VM.
+#
+# The official DU launcher is Windows-only (it depends on Microsoft WebView2),
+# so this script boots a small Windows guest via libvirt, shows only the
+# launcher window over SPICE, waits for it to finish, and shuts everything down.
+#
+# The user's Linux game directory is shared into the guest over VirtIO-FS, so
+# the game files live on the Linux side and the VM stays disposable.
+#
+# See doc/Dual_Universe_Linux_Updater_VM_Proposal.md for the full design.
+
+set -euo pipefail
+
+# --------------------------------------------------------------------------- #
+# Defaults & paths (XDG-compliant)
+# --------------------------------------------------------------------------- #
+readonly PROG="du-updater"
+
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/$PROG"
+STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/$PROG"
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/$PROG"
+readonly CONFIG_FILE="$CONFIG_HOME/config"
+readonly LOG_FILE="$STATE_HOME/$PROG.log"
+
+# Overridable via config file / environment / flags.
+VM_NAME="${DU_VM_NAME:-du-updater}"
+LIBVIRT_URI="${DU_LIBVIRT_URI:-qemu:///session}"
+# VirtIO-FS mount tag the Windows guest maps the game directory from.
+SHARE_TAG="${DU_SHARE_TAG:-dushare}"
+# Optional clean snapshot to restore before each launch (nice-to-have).
+CLEAN_SNAPSHOT="${DU_CLEAN_SNAPSHOT:-}"
+# Launcher executable expected inside the game directory.
+LAUNCHER_EXE="${DU_LAUNCHER_EXE:-du-launcher.exe}"
+# Official MyDU installer, used by the guest when the launcher is missing.
+INSTALLER_URL="${DU_INSTALLER_URL:-https://installer-prod.dualthegame.com/mydu/dual-installer.exe}"
+# Sub-directory of the share holding the command file the guest reads.
+readonly CONTROL_DIRNAME=".du-updater"
+
+GAME_DIR="${DU_GAME_DIR:-}"
+SILENT=0          # --silent : no SPICE window, wait headless for shutdown
+NO_REVERT=0       # --no-revert : skip snapshot restore even if configured
+SET_ONLY=0        # --set-game-dir : persist config and exit without launching
+ASSUME_YES=0      # -y/--yes : answer yes to prompts (non-interactive)
+FORCE_INSTALL=0   # --install : install MyDU without prompting if missing
+CHECK_ONLY=0      # --check-access : run the access check (with detail) and exit
+NO_CHECK=0        # --no-check : skip the game-directory access check
+FIX_ACCESS=0      # --fix-access : repair restricted permissions without asking
+
+# --------------------------------------------------------------------------- #
+# Logging
+# --------------------------------------------------------------------------- #
+log()  { printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "${*:2}" >>"$LOG_FILE"; }
+info() { log INFO  "$*"; [ "$SILENT" -eq 1 ] || printf '%s\n'        "$*" >&2; }
+warn() { log WARN  "$*"; printf 'warning: %s\n'  "$*" >&2; }
+die()  { log ERROR "$*"; printf 'error: %s\n'    "$*" >&2; exit 1; }
+
+usage() {
+    cat <<EOF
+Usage: $PROG [options]
+
+Launch the Dual Universe updater. The game files stay on Linux and are shared
+into a hidden Windows VM that runs the official launcher.
+
+Options:
+  -g, --game-dir DIR    Directory where the game is (or should be) installed.
+                        Persisted to the config file for future runs. Created
+                        if it does not exist.
+      --set-game-dir DIR
+                        Save DIR as the game directory and exit (no launch).
+      --install         If $LAUNCHER_EXE is missing, install MyDU without asking.
+      --check-access    Report files the VM cannot fully access, then exit.
+      --fix-access      Repair restricted permissions without prompting.
+      --no-check        Skip the game-directory access check.
+  -y, --yes             Assume "yes" for all prompts (non-interactive).
+      --vm NAME         libvirt domain name       (default: $VM_NAME)
+      --uri URI         libvirt connection URI     (default: $LIBVIRT_URI)
+      --silent          Run headless: no SPICE window; wait for auto-shutdown.
+      --no-revert       Do not restore the clean snapshot before launching.
+  -h, --help            Show this help and exit.
+
+Config file: $CONFIG_FILE
+Log file:    $LOG_FILE
+
+First run:
+  $PROG --game-dir "\$HOME/Games/DualUniverse"
+EOF
+}
+
+# --------------------------------------------------------------------------- #
+# Config persistence
+# --------------------------------------------------------------------------- #
+load_config() {
+    [ -f "$CONFIG_FILE" ] || return 0
+    # shellcheck disable=SC1090
+    . "$CONFIG_FILE"
+    GAME_DIR="${GAME_DIR:-${DU_GAME_DIR:-}}"
+}
+
+save_config() {
+    mkdir -p "$CONFIG_HOME"
+    umask 077
+    cat >"$CONFIG_FILE" <<EOF
+# $PROG configuration — generated $(date '+%Y-%m-%d %H:%M:%S')
+GAME_DIR="$GAME_DIR"
+VM_NAME="$VM_NAME"
+LIBVIRT_URI="$LIBVIRT_URI"
+SHARE_TAG="$SHARE_TAG"
+CLEAN_SNAPSHOT="$CLEAN_SNAPSHOT"
+EOF
+    info "Saved configuration to $CONFIG_FILE"
+}
+
+# --------------------------------------------------------------------------- #
+# Argument parsing
+# --------------------------------------------------------------------------- #
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -g|--game-dir)   GAME_DIR="${2:?--game-dir requires a directory}"; shift 2 ;;
+            --set-game-dir)  GAME_DIR="${2:?--set-game-dir requires a directory}"; SET_ONLY=1; shift 2 ;;
+            --install)       FORCE_INSTALL=1; shift ;;
+            --check-access)  CHECK_ONLY=1; shift ;;
+            --fix-access)    FIX_ACCESS=1; shift ;;
+            --no-check)      NO_CHECK=1; shift ;;
+            -y|--yes)        ASSUME_YES=1; shift ;;
+            --vm)            VM_NAME="${2:?--vm requires a name}"; shift 2 ;;
+            --uri)           LIBVIRT_URI="${2:?--uri requires a value}"; shift 2 ;;
+            --silent)        SILENT=1; shift ;;
+            --no-revert)     NO_REVERT=1; shift ;;
+            -h|--help)       usage; exit 0 ;;
+            --)              shift; break ;;
+            -*)              die "unknown option: $1 (try --help)" ;;
+            *)               die "unexpected argument: $1 (try --help)" ;;
+        esac
+    done
+}
+
+# --------------------------------------------------------------------------- #
+# Preconditions
+# --------------------------------------------------------------------------- #
+require_cmd() { command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not installed.${2:+ $2}"; }
+
+virsh_() { virsh --connect "$LIBVIRT_URI" "$@"; }
+
+check_deps() {
+    require_cmd virsh "Install libvirt-clients / libvirt."
+    [ "$SILENT" -eq 1 ] || require_cmd virt-viewer "Install virt-viewer for the SPICE window."
+}
+
+resolve_game_dir() {
+    [ -n "$GAME_DIR" ] || die "no game directory set. Provide one with:
+    $PROG --game-dir /path/to/DualUniverse
+This is where the game is installed (or will be installed) on Linux; it is
+shared into the VM so updates land in your native game folder."
+
+    # Expand ~ and make absolute.
+    case "$GAME_DIR" in
+        "~")   GAME_DIR="$HOME" ;;
+        "~/"*) GAME_DIR="$HOME/${GAME_DIR#\~/}" ;;
+    esac
+    mkdir -p "$GAME_DIR" || die "cannot create game directory: $GAME_DIR"
+    GAME_DIR="$(cd "$GAME_DIR" && pwd -P)"
+    [ -w "$GAME_DIR" ] || die "game directory is not writable: $GAME_DIR"
+    info "Game directory: $GAME_DIR"
+}
+
+# Ask a yes/no question. Honors --yes; falls back to the default when there is
+# no terminal to read from. Returns 0 for yes, 1 for no.
+prompt_yes_no() {
+    local prompt="$1" default="${2:-0}" ans hint="[y/N]"
+    [ "$ASSUME_YES" -eq 1 ] && return 0
+    [ "$default" -eq 1 ] && hint="[Y/n]"
+    # No controlling terminal to ask on -> use the default.
+    if ! { true >/dev/tty; } 2>/dev/null; then
+        [ "$default" -eq 1 ] && return 0 || return 1
+    fi
+    printf '%s %s ' "$prompt" "$hint" >/dev/tty
+    read -r ans </dev/tty 2>/dev/null || ans=""
+    case "$ans" in
+        [Yy]|[Yy][Ee][Ss]) return 0 ;;
+        [Nn]|[Nn][Oo])     return 1 ;;
+        "") [ "$default" -eq 1 ] && return 0 || return 1 ;;
+        *)  return 1 ;;
+    esac
+}
+
+# VirtIO-FS (session mode) exposes files to the guest as the current user, so
+# anything this user cannot read+write can make the DU install/update fail.
+# Report offenders (optionally listing them), offer to fix, and return 0 only
+# when the directory is fully accessible. $1=1 forces the detailed listing.
+check_access() {
+    local show="${1:-0}" list n owner
+    list="$(find "$GAME_DIR" \( ! -readable -o ! -writable \) -print 2>/dev/null || true)"
+    n=0; [ -n "$list" ] && n="$(printf '%s\n' "$list" | grep -c .)"
+
+    if [ "$n" -eq 0 ]; then
+        info "Access check: OK — the VM can read and write every file in the game directory."
+        return 0
+    fi
+
+    warn "Access check: $n item(s) are not fully accessible to your user ($(id -un))."
+    warn "The VM shares files as your user; restricted items can cause install/update errors."
+
+    [ "$show" -ne 1 ] && prompt_yes_no "Show which files have restricted access?" 0 && show=1
+    if [ "$show" -eq 1 ]; then
+        printf '%s\n' "$list" | head -n 100 | sed 's/^/    /' >&2
+        [ "$n" -gt 100 ] && printf '    ... and %d more\n' "$((n - 100))" >&2
+    fi
+
+    owner="$(id -un)"
+    warn "Suggested fix: chmod -R u+rwX \"$GAME_DIR\"  (add sudo/chown if owned by another user)"
+    if [ "$FIX_ACCESS" -eq 1 ] || prompt_yes_no "Attempt to fix permissions now?" 0; then
+        info "Repairing permissions..."
+        chmod -R u+rwX "$GAME_DIR" 2>/dev/null || warn "chmod failed for some items (may need sudo)."
+        list="$(find "$GAME_DIR" \( ! -readable -o ! -writable \) -print 2>/dev/null || true)"
+        if [ -z "$list" ]; then info "Permissions repaired."; return 0; fi
+        warn "Some items are still restricted (likely owned by another user; needs sudo/chown)."
+    fi
+    return 1
+}
+
+# Decide whether the guest should just run the launcher or install MyDU first,
+# then write the command file the guest reads from the shared folder.
+plan_action() {
+    local action
+    if [ -e "$GAME_DIR/$LAUNCHER_EXE" ]; then
+        info "Found $LAUNCHER_EXE — the VM will start the launcher."
+        action="run"
+    else
+        warn "$LAUNCHER_EXE not found in the game directory."
+        if [ "$FORCE_INSTALL" -eq 1 ] || prompt_yes_no "Install MyDU from the official installer?" 0; then
+            info "MyDU will be installed inside the VM before the launcher starts."
+            action="install"
+        else
+            die "nothing to launch: $LAUNCHER_EXE is missing and installation was declined."
+        fi
+    fi
+
+    local dir="$GAME_DIR/$CONTROL_DIRNAME"
+    mkdir -p "$dir"
+    cat >"$dir/command" <<EOF
+# Read by the Windows guest on start. Generated by $PROG.
+ACTION=$action
+INSTALLER_URL=$INSTALLER_URL
+LAUNCHER_EXE=$LAUNCHER_EXE
+EOF
+}
+
+ensure_domain_exists() {
+    if ! virsh_ dominfo "$VM_NAME" >/dev/null 2>&1; then
+        die "libvirt domain '$VM_NAME' not found on $LIBVIRT_URI.
+Create the VM first (see scripts/create-vm.sh), or pass --vm NAME if it has a
+different name."
+    fi
+}
+
+# Point the VM's VirtIO-FS share at the current game directory. Requires the
+# domain to be shut off; virt-xml is used when available for a clean edit.
+reconcile_share() {
+    local state
+    state="$(virsh_ domstate "$VM_NAME" 2>/dev/null || echo unknown)"
+    if [ "$state" != "shut off" ]; then
+        warn "domain '$VM_NAME' is '$state'; cannot update the shared game path now."
+        return 0
+    fi
+
+    local current
+    current="$(virsh_ dumpxml --inactive "$VM_NAME" 2>/dev/null \
+                | grep -oP "(?<=<source dir=')[^']*(?='[^>]*/>\s*<target dir='$SHARE_TAG')" || true)"
+    if [ "$current" = "$GAME_DIR" ]; then
+        info "VirtIO-FS share '$SHARE_TAG' already points at the game directory."
+        return 0
+    fi
+
+    if command -v virt-xml >/dev/null 2>&1; then
+        info "Updating VirtIO-FS share '$SHARE_TAG' -> $GAME_DIR"
+        if ! virt-xml --connect "$LIBVIRT_URI" "$VM_NAME" \
+                --edit "target=$SHARE_TAG" \
+                --filesystem "source=$GAME_DIR,target=$SHARE_TAG" >/dev/null 2>&1; then
+            # No existing filesystem with that tag yet — add one.
+            virt-xml --connect "$LIBVIRT_URI" "$VM_NAME" \
+                --add-device --filesystem \
+                "type=mount,accessmode=passthrough,driver.type=virtiofs,source=$GAME_DIR,target=$SHARE_TAG" \
+                >/dev/null 2>&1 \
+                || warn "could not configure the VirtIO-FS share automatically; check the domain XML."
+        fi
+    else
+        warn "virt-xml not found: cannot auto-update the share path.
+Ensure the '$SHARE_TAG' VirtIO-FS filesystem in domain '$VM_NAME' points at:
+    $GAME_DIR"
+    fi
+}
+
+maybe_revert_snapshot() {
+    [ "$NO_REVERT" -eq 1 ] && return 0
+    [ -n "$CLEAN_SNAPSHOT" ] || return 0
+    if virsh_ snapshot-info "$VM_NAME" "$CLEAN_SNAPSHOT" >/dev/null 2>&1; then
+        info "Restoring clean snapshot '$CLEAN_SNAPSHOT'"
+        virsh_ snapshot-revert "$VM_NAME" "$CLEAN_SNAPSHOT" \
+            || warn "snapshot revert failed; continuing with current VM state."
+    else
+        warn "clean snapshot '$CLEAN_SNAPSHOT' not found; skipping revert."
+    fi
+}
+
+# --------------------------------------------------------------------------- #
+# VM lifecycle
+# --------------------------------------------------------------------------- #
+start_vm() {
+    local state
+    state="$(virsh_ domstate "$VM_NAME" 2>/dev/null || echo unknown)"
+    if [ "$state" = "running" ]; then
+        info "VM '$VM_NAME' is already running."
+        return 0
+    fi
+    info "Starting VM '$VM_NAME'..."
+    virsh_ start "$VM_NAME" >/dev/null || die "failed to start VM '$VM_NAME'."
+}
+
+# Wait until the guest shuts itself down (launcher closed -> shutdown.exe).
+wait_for_shutdown() {
+    info "Waiting for the updater to finish (VM will power off automatically)..."
+    while :; do
+        case "$(virsh_ domstate "$VM_NAME" 2>/dev/null || echo unknown)" in
+            "shut off"|"crashed"|"unknown") break ;;
+        esac
+        sleep 3
+    done
+}
+
+# Open the SPICE window and block until it closes (VM shut down or user closed).
+open_viewer() {
+    info "Opening the updater window..."
+    # --wait: wait for the domain; --attach: use libvirt (no exposed SPICE port);
+    # the viewer exits on its own when the guest powers off.
+    virt-viewer --connect "$LIBVIRT_URI" --attach --wait --reconnect \
+        --title "Dual Universe Updater" "$VM_NAME" || true
+}
+
+# Best-effort clean stop if the VM is still running after the window closed.
+ensure_stopped() {
+    local state
+    state="$(virsh_ domstate "$VM_NAME" 2>/dev/null || echo unknown)"
+    [ "$state" = "running" ] || return 0
+    info "Updater window closed while VM still running; shutting it down..."
+    virsh_ shutdown "$VM_NAME" >/dev/null 2>&1 || true
+    local i=0
+    while [ "$i" -lt 30 ]; do
+        [ "$(virsh_ domstate "$VM_NAME" 2>/dev/null || echo unknown)" = "running" ] || return 0
+        sleep 2; i=$((i + 1))
+    done
+    warn "VM did not shut down gracefully; forcing power off."
+    virsh_ destroy "$VM_NAME" >/dev/null 2>&1 || true
+}
+
+cleanup() { ensure_stopped; }
+
+# --------------------------------------------------------------------------- #
+# Main
+# --------------------------------------------------------------------------- #
+main() {
+    mkdir -p "$STATE_HOME" "$DATA_HOME"
+    : >>"$LOG_FILE"
+
+    load_config
+    parse_args "$@"
+    resolve_game_dir
+
+    # Persist whatever we resolved for next time.
+    save_config
+    [ "$SET_ONLY" -eq 1 ] && exit 0
+
+    # --check-access: report and exit without touching the VM.
+    if [ "$CHECK_ONLY" -eq 1 ]; then
+        check_access 1 && exit 0 || exit 1
+    fi
+
+    # Verify the guest will be able to read/write the shared files.
+    if [ "$NO_CHECK" -eq 0 ] && ! check_access 0; then
+        prompt_yes_no "Continue despite restricted files?" 0 \
+            || die "aborted; fix the permissions above and retry (or use --no-check)."
+    fi
+
+    # Decide run-vs-install and write the guest command file.
+    plan_action
+
+    check_deps
+    ensure_domain_exists
+    maybe_revert_snapshot
+    reconcile_share
+
+    trap cleanup EXIT INT TERM
+    start_vm
+
+    if [ "$SILENT" -eq 1 ]; then
+        wait_for_shutdown
+    else
+        open_viewer
+        ensure_stopped
+    fi
+
+    info "Done. Update session finished."
+}
+
+main "$@"

@@ -1,0 +1,115 @@
+<!--
+  Runtime libvirt domain for the Dual Universe updater VM.
+
+  This is a TEMPLATE: scripts/create-vm.sh renders the ${...} placeholders with
+  envsubst and defines the result. It is the authoritative *runtime* definition
+  (boots from the disk, no install media). During OS installation the create
+  script temporarily attaches the Windows and VirtIO-win ISOs as boot CD-ROMs.
+
+  Design (see doc/): Windows 10 x64 guest, 2 vCPU / 4 GB / 32 GB qcow2,
+  VirtIO GPU + SPICE (no GPU passthrough), VirtIO net, and a VirtIO-FS share
+  that maps the Linux game directory into the guest under tag '${SHARE_TAG}'.
+  Runs on qemu:///session so no root is required.
+-->
+<domain type='kvm'>
+  <name>${VM_NAME}</name>
+  <title>Dual Universe Updater</title>
+  <memory unit='KiB'>${MEM_KIB}</memory>
+  <currentMemory unit='KiB'>${MEM_KIB}</currentMemory>
+
+  <!-- Shared memory backing is REQUIRED for VirtIO-FS. -->
+  <memoryBacking>
+    <source type='memfd'/>
+    <access mode='shared'/>
+  </memoryBacking>
+
+  <vcpu placement='static'>${VCPUS}</vcpu>
+
+  <os>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <boot dev='hd'/>
+  </os>
+
+  <features>
+    <acpi/>
+    <apic/>
+    <!-- Hyper-V enlightenments improve Windows guest performance. -->
+    <hyperv mode='custom'>
+      <relaxed state='on'/>
+      <vapic state='on'/>
+      <spinlocks state='on' retries='8191'/>
+    </hyperv>
+    <vmport state='off'/>
+  </features>
+
+  <cpu mode='host-passthrough' check='none' migratable='on'/>
+
+  <clock offset='localtime'>
+    <timer name='rtc' tickpolicy='catchup'/>
+    <timer name='pit' tickpolicy='delay'/>
+    <timer name='hpet' present='no'/>
+    <timer name='hypervclock' present='yes'/>
+  </clock>
+
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+
+  <pm>
+    <suspend-to-mem enabled='no'/>
+    <suspend-to-disk enabled='no'/>
+  </pm>
+
+  <devices>
+    <!-- Primary OS disk (VirtIO). During install, load viostor from the
+         VirtIO-win ISO so Windows setup can see this disk. -->
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' discard='unmap'/>
+      <source file='${DISK_PATH}'/>
+      <target dev='vda' bus='virtio'/>
+      <boot order='3'/>
+    </disk>
+
+    <controller type='usb' model='qemu-xhci' ports='15'/>
+    <controller type='virtio-serial'/>
+
+    <!-- User-mode (SLIRP) networking: outbound internet with no host setup
+         or root; enough for the launcher to download updates. -->
+    <interface type='user'>
+      <model type='virtio'/>
+    </interface>
+
+    <!-- VirtIO-FS share: the Linux game directory, mounted in the guest via
+         tag '${SHARE_TAG}'. Updates land directly in the native game folder. -->
+    <filesystem type='mount' accessmode='passthrough'>
+      <driver type='virtiofs'/>
+      <source dir='${GAME_DIR}'/>
+      <target dir='${SHARE_TAG}'/>
+    </filesystem>
+
+    <!-- SPICE agent channel (clipboard / auto-resize). -->
+    <channel type='spicevmc'>
+      <target type='virtio' name='com.redhat.spice.0'/>
+    </channel>
+    <!-- QEMU guest agent channel (clean shutdown / status). -->
+    <channel type='unix'>
+      <target type='virtio' name='org.qemu.guest_agent.0'/>
+    </channel>
+
+    <graphics type='spice' autoport='yes'>
+      <listen type='none'/>
+      <image compression='off'/>
+      <gl enable='no'/>
+    </graphics>
+
+    <!-- VirtIO GPU, no host GL / no passthrough. -->
+    <video>
+      <model type='virtio' heads='1' primary='yes'/>
+    </video>
+
+    <input type='tablet' bus='usb'/>
+    <input type='keyboard' bus='usb'/>
+    <redirdev bus='usb' type='spicevmc'/>
+    <memballoon model='virtio'/>
+  </devices>
+</domain>
