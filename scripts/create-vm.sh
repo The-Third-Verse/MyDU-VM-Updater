@@ -123,8 +123,6 @@ parse_args() {
 
 virsh_() { virsh --connect "$LIBVIRT_URI" "$@"; }
 
-require_cmd() { command -v "$1" >/dev/null 2>&1 || die "'$1' is not installed. Install: $(install_hint "$1")"; }
-
 # Suggest a distro-appropriate install command for a required tool.
 install_hint() {
     local tool="$1" apt dnf pacman zypper osinfo id like
@@ -135,6 +133,7 @@ install_hint() {
         qemu-img)     apt="qemu-utils";      dnf="qemu-img";       pacman="qemu-img";      zypper="qemu-tools" ;;
         envsubst)     apt="gettext-base";    dnf="gettext";        pacman="gettext";       zypper="gettext-runtime" ;;
         swtpm)        apt="swtpm";           dnf="swtpm";          pacman="swtpm";         zypper="swtpm" ;;
+        virtiofsd)    apt="virtiofsd";       dnf="virtiofsd";      pacman="virtiofsd";     zypper="virtiofsd" ;;
         curl)         apt="curl";            dnf="curl";           pacman="curl";          zypper="curl" ;;
         *)            apt="$tool"; dnf="$tool"; pacman="$tool"; zypper="$tool" ;;
     esac
@@ -159,6 +158,7 @@ check_deps() {
     for tool in "${needed[@]}"; do
         command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
     done
+    have_virtiofsd || missing+=("virtiofsd")  # required for the VirtIO-FS game share
     if [ "${#missing[@]}" -gt 0 ]; then
         { printf 'error: missing required dependencies:\n'
           for tool in "${missing[@]}"; do printf '  - %-12s install: %s\n' "$tool" "$(install_hint "$tool")"; done
@@ -175,6 +175,14 @@ have_ovmf() {
     ls /usr/share/OVMF/OVMF_CODE*.fd \
        /usr/share/edk2*/*/OVMF_CODE*.fd \
        /usr/share/qemu/firmware/*.json >/dev/null 2>&1
+}
+
+# The standalone (Rust) VirtIO-FS daemon usually lives outside $PATH (libexec),
+# so probe its known locations too. Deliberately excludes the deprecated
+# /usr/lib/qemu/virtiofsd, which modern libvirt rejects as "unsatisfying".
+have_virtiofsd() {
+    command -v virtiofsd >/dev/null 2>&1 && return 0
+    ls /usr/libexec/virtiofsd /usr/lib/virtiofsd /usr/bin/virtiofsd >/dev/null 2>&1
 }
 
 # Fill the firmware/TPM template slots for Windows 11 (UEFI + Secure Boot + TPM).
@@ -221,7 +229,6 @@ fetch_virtio_iso() {
         info "Using cached VirtIO-win ISO: $VIRTIO_ISO"
         return 0
     fi
-    require_cmd curl
     info "Downloading VirtIO-win ISO -> $VIRTIO_ISO"
     curl -fL --progress-bar "$VIRTIO_URL" -o "$VIRTIO_ISO.part" \
         || die "failed to download VirtIO-win ISO from $VIRTIO_URL"

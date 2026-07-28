@@ -140,8 +140,6 @@ parse_args() {
 # --------------------------------------------------------------------------- #
 # Preconditions
 # --------------------------------------------------------------------------- #
-require_cmd() { command -v "$1" >/dev/null 2>&1 || die "'$1' is not installed. Install: $(install_hint "$1")"; }
-
 virsh_() { virsh --connect "$LIBVIRT_URI" "$@"; }
 
 # Suggest a distro-appropriate install command for a required tool.
@@ -154,6 +152,7 @@ install_hint() {
         qemu-img)     apt="qemu-utils";      dnf="qemu-img";       pacman="qemu-img";      zypper="qemu-tools" ;;
         envsubst)     apt="gettext-base";    dnf="gettext";        pacman="gettext";       zypper="gettext-runtime" ;;
         swtpm)        apt="swtpm";           dnf="swtpm";          pacman="swtpm";         zypper="swtpm" ;;
+        virtiofsd)    apt="virtiofsd";       dnf="virtiofsd";      pacman="virtiofsd";     zypper="virtiofsd" ;;
         curl)         apt="curl";            dnf="curl";           pacman="curl";          zypper="curl" ;;
         *)            apt="$tool"; dnf="$tool"; pacman="$tool"; zypper="$tool" ;;
     esac
@@ -170,11 +169,20 @@ install_hint() {
     esac
 }
 
+# The standalone (Rust) VirtIO-FS daemon usually lives outside $PATH (libexec),
+# so probe its known locations too. Deliberately excludes the deprecated
+# /usr/lib/qemu/virtiofsd, which modern libvirt rejects as "unsatisfying".
+have_virtiofsd() {
+    command -v virtiofsd >/dev/null 2>&1 && return 0
+    ls /usr/libexec/virtiofsd /usr/lib/virtiofsd /usr/bin/virtiofsd >/dev/null 2>&1
+}
+
 # Verify all required tools are present, reporting every missing one at once.
 check_deps() {
     local missing=() tool
     command -v virsh >/dev/null 2>&1 || missing+=("virsh")
     [ "$SILENT" -eq 1 ] || command -v virt-viewer >/dev/null 2>&1 || missing+=("virt-viewer")
+    have_virtiofsd || missing+=("virtiofsd")  # required for the VirtIO-FS game share
     [ "${#missing[@]}" -eq 0 ] && return 0
     { printf 'error: missing required dependencies:\n'
       for tool in "${missing[@]}"; do printf '  - %-12s install: %s\n' "$tool" "$(install_hint "$tool")"; done

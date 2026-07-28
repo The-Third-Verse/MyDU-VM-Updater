@@ -43,6 +43,7 @@ distro-specific install command for anything missing):
 |------|----------|---------|
 | `qemu-system-x86_64`, KVM | the hypervisor | runtime |
 | `virsh` | libvirt CLI | both |
+| `virtiofsd` | serves the VirtIO-FS game share | both (VM start) |
 | `virt-viewer` | SPICE window | `du-updater` |
 | `virt-xml` | edit the domain (share path, install media) | `create-vm.sh`, `du-updater` |
 | `qemu-img` | create the qcow2 disk | `create-vm.sh` |
@@ -55,18 +56,18 @@ Install everything in one go:
 ```bash
 # Debian / Ubuntu
 sudo apt install qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients \
-                 virt-viewer virtinst gettext-base curl swtpm ovmf
+                 virtiofsd virt-viewer virtinst gettext-base curl swtpm ovmf
 
 # Fedora / RHEL
-sudo dnf install qemu-kvm qemu-img libvirt libvirt-client virt-viewer virt-install \
-                 gettext curl swtpm edk2-ovmf
+sudo dnf install qemu-kvm qemu-img libvirt libvirt-client virtiofsd virt-viewer \
+                 virt-install gettext curl swtpm edk2-ovmf
 
 # Arch
-sudo pacman -S qemu-full libvirt virt-viewer virt-install gettext curl swtpm edk2-ovmf
+sudo pacman -S qemu-full libvirt virtiofsd virt-viewer virt-install gettext curl swtpm edk2-ovmf
 
 # openSUSE
-sudo zypper install qemu-kvm qemu-tools libvirt-client virt-viewer virt-install \
-                    gettext-runtime curl swtpm qemu-ovmf-x86_64
+sudo zypper install qemu-kvm qemu-tools libvirt-client virtiofsd virt-viewer \
+                    virt-install gettext-runtime curl swtpm qemu-ovmf-x86_64
 ```
 
 Then make sure `libvirtd` is running (`systemctl enable --now libvirtd`) and your
