@@ -1,0 +1,171 @@
+<#
+.SYNOPSIS
+    One-time provisioning of the Dual Universe updater Windows guest.
+
+.DESCRIPTION
+    Run this ONCE, as Administrator, after installing Windows and while the
+    VirtIO-win CD is still attached (i.e. before `create-vm.sh --finalize`).
+    It:
+      * creates a restricted local user and enables auto-login for it,
+      * installs WinFsp + the VirtIO guest tools (viofs, NetKVM, balloon, qemu-ga)
+        and starts VirtioFsSvc so the shared game folder appears as a drive,
+      * installs the Microsoft Edge WebView2 runtime (needed by the DU launcher),
+      * installs Start-Updater.ps1 and registers it to run at that user's login.
+
+    After it finishes: shut Windows down, then run `create-vm.sh --finalize` on
+    the host. From then on `du-updater` drives everything automatically.
+
+.NOTES
+    Downloads (WinFsp, WebView2) need working internet in the guest — the VM uses
+    an e1000e NIC so this works out of the box once Windows is at the desktop.
+#>
+[CmdletBinding()]
+param(
+    [string]$UserName    = "duupdater",
+    [string]$Password    = "DualUniverse!1",
+    [string]$ShareTag    = "dushare",
+    [string]$InstallDir  = "$env:ProgramData\du-updater",
+    [string]$WinFspUrl   = "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi",
+    [string]$WebView2Url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+)
+
+$ErrorActionPreference = "Stop"
+
+function Log  { param([string]$m) Write-Host ("==> " + $m) -ForegroundColor Cyan }
+function Warn { param([string]$m) Write-Host ("warning: " + $m) -ForegroundColor Yellow }
+
+function Assert-Admin {
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $p  = New-Object Security.Principal.WindowsPrincipal($id)
+    if (-not $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw "This script must be run as Administrator."
+    }
+}
+
+# Locate the attached VirtIO-win CD (has virtio-win-guest-tools.exe / viofs).
+function Get-VirtioDrive {
+    foreach ($v in Get-Volume | Where-Object { $_.DriveLetter }) {
+        $root = "$($v.DriveLetter):\"
+        if (Test-Path (Join-Path $root 'virtio-win-guest-tools.exe')) { return $root }
+    }
+    foreach ($v in Get-Volume | Where-Object { $_.DriveLetter }) {
+        $root = "$($v.DriveLetter):\"
+        if (Test-Path (Join-Path $root 'viofs')) { return $root }
+    }
+    return $null
+}
+
+function Get-File {
+    param([string]$Url, [string]$OutFile)
+    Log "Downloading $Url"
+    # Faster than Invoke-WebRequest for large files; fall back if BITS is off.
+    try   { Start-BitsTransfer -Source $Url -Destination $OutFile -ErrorAction Stop }
+    catch { Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing }
+}
+
+function New-RestrictedUser {
+    $sec = ConvertTo-SecureString $Password -AsPlainText -Force
+    if (-not (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue)) {
+        Log "Creating restricted user '$UserName'"
+        New-LocalUser -Name $UserName -Password $sec -FullName "DU Updater" `
+            -Description "Restricted Dual Universe updater user" `
+            -PasswordNeverExpires -UserMayNotChangePassword | Out-Null
+    } else {
+        Log "User '$UserName' already exists"
+    }
+    # Standard user only (member of Users, never Administrators).
+    Add-LocalGroupMember -Group "Users" -Member $UserName -ErrorAction SilentlyContinue
+}
+
+function Set-AutoLogon {
+    Log "Enabling auto-login for '$UserName'"
+    $win = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+    Set-ItemProperty $win AutoAdminLogon   "1"
+    Set-ItemProperty $win DefaultUserName   $UserName
+    Set-ItemProperty $win DefaultPassword   $Password           # plaintext: OK for a disposable VM
+    Set-ItemProperty $win DefaultDomainName $env:COMPUTERNAME
+    Remove-ItemProperty $win -Name AutoLogonCount -ErrorAction SilentlyContinue
+}
+
+function Install-WinFsp {
+    if (Test-Path "$env:ProgramFiles(x86)\WinFsp") { Log "WinFsp already installed"; return }
+    $msi = Join-Path $env:TEMP "winfsp.msi"
+    Get-File -Url $WinFspUrl -OutFile $msi
+    Log "Installing WinFsp"
+    Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn /norestart" -Wait
+}
+
+function Install-VirtioGuestTools {
+    param([string]$VirtioDrive)
+    if (-not $VirtioDrive) { Warn "VirtIO-win CD not found; skipping guest tools (share/NIC drivers may be missing)"; return }
+    $gt = Join-Path $VirtioDrive 'virtio-win-guest-tools.exe'
+    Log "Installing VirtIO guest tools from $gt"
+    Start-Process $gt -ArgumentList "/install /passive /norestart" -Wait
+}
+
+function Enable-VirtioFs {
+    $svc = Get-Service -Name VirtioFsSvc -ErrorAction SilentlyContinue
+    if ($svc) {
+        Log "Enabling and starting VirtioFsSvc (game share)"
+        Set-Service -Name VirtioFsSvc -StartupType Automatic
+        Start-Service -Name VirtioFsSvc -ErrorAction SilentlyContinue
+    } else {
+        Warn "VirtioFsSvc not found — the VirtIO-FS share won't mount. Ensure the guest tools installed viofs, and WinFsp is present."
+    }
+}
+
+function Install-WebView2 {
+    # Skip if an Evergreen runtime is already registered.
+    $key = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    if (Test-Path $key) { Log "WebView2 runtime already installed"; return }
+    $exe = Join-Path $env:TEMP "MicrosoftEdgeWebView2Setup.exe"
+    Get-File -Url $WebView2Url -OutFile $exe
+    Log "Installing WebView2 runtime"
+    Start-Process $exe -ArgumentList "/silent /install" -Wait
+}
+
+function Install-BootTask {
+    Log "Installing boot script to $InstallDir"
+    New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+    $boot = Join-Path $InstallDir 'Start-Updater.ps1'
+    Copy-Item (Join-Path $PSScriptRoot 'Start-Updater.ps1') $boot -Force
+
+    Log "Registering logon task 'DU-Updater' for '$UserName'"
+    $arg       = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$boot`" -ShareTag `"$ShareTag`""
+    $action    = New-ScheduledTaskAction    -Execute 'powershell.exe' -Argument $arg
+    $trigger   = New-ScheduledTaskTrigger   -AtLogOn -User $UserName
+    $principal = New-ScheduledTaskPrincipal -UserId $UserName -RunLevel Limited
+    $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
+    Register-ScheduledTask -TaskName 'DU-Updater' -Action $action -Trigger $trigger `
+        -Principal $principal -Settings $settings -Force | Out-Null
+}
+
+# --------------------------------------------------------------------------- #
+Assert-Admin
+Log "Provisioning Dual Universe updater guest"
+
+$virtio = Get-VirtioDrive
+if ($virtio) { Log "VirtIO-win CD: $virtio" } else { Warn "VirtIO-win CD not detected" }
+
+New-RestrictedUser
+Set-AutoLogon
+Install-WinFsp
+Install-VirtioGuestTools -VirtioDrive $virtio
+Enable-VirtioFs
+Install-WebView2
+Install-BootTask
+
+Write-Host ""
+Log "Guest provisioning complete."
+Write-Host @"
+
+Next steps:
+  1. Shut Windows down completely (Start > Power > Shut down).
+  2. On the Linux host, finalize the VM:
+         scripts/create-vm.sh --finalize
+  3. From then on just run:  du-updater
+
+The first time the launcher is missing from the game folder, du-updater will
+offer to install MyDU; the installer window appears so you can point it at the
+shared game drive (the one that contains a \.du-updater folder).
+"@ -ForegroundColor Green

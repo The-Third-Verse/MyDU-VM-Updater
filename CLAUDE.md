@@ -10,7 +10,10 @@ Implementation in progress. `doc/Dual_Universe_Linux_Updater_VM_Proposal.md` hol
 - `libvirt/du-updater.xml.in` — envsubst template for the runtime libvirt domain (authoritative runtime definition).
 - `scripts/create-vm.sh` — provisions the VM (disk, VirtIO ISO, define domain, attach Windows install media) and `--finalize` (eject media + clean snapshot). Windows 10 (BIOS) by default; `--win11` fills the template's firmware slots with UEFI + Secure Boot + emulated TPM 2.0 (needs `swtpm` + OVMF) and bumps defaults to 6 GB / 64 G.
 
-Still to build: the Windows guest setup PowerShell scripts, and a `.desktop` shortcut.
+- `windows/Setup-Guest.ps1` — one-time guest provisioning (restricted auto-login user, WinFsp + VirtIO guest tools + VirtioFsSvc, WebView2, registers the boot task). Run as admin while the VirtIO CD is attached, before `--finalize`.
+- `windows/Start-Updater.ps1` — per-login boot script: mounts the share, reads `.du-updater/command`, installs/updates MyDU, runs the launcher, always shuts down (in `finally`) so `du-updater` sees the VM stop.
+
+Still to build: a `.desktop` shortcut, and (optional) an unattended-install pipeline (autounattend.xml) so the VM builds hands-off from the user's ISO.
 
 ## Guest control-file contract
 
