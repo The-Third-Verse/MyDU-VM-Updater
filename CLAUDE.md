@@ -1,0 +1,45 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Current State
+
+This repository currently contains **only a proposal/spec document** — `doc/Dual_Universe_Linux_Updater_VM_Proposal.md`. There is no source code, build system, or git repository yet. The task is to implement the system described in that proposal from scratch.
+
+## Project Goal
+
+Build a Linux updater for **Dual Universe** that runs the official Windows game launcher inside a hidden Windows VM, so Linux users can update the game (via the Windows-only launcher, which depends on Microsoft WebView2) while playing the native Linux client. The VM must be invisible to the user and behave like a native Linux app invoked as `du-updater`.
+
+## Architecture (as specified)
+
+The flow is a single-purpose VM lifecycle wrapped by a Linux launcher script:
+
+```
+du-updater (Linux script)
+  → start QEMU/KVM VM via libvirt
+  → open SPICE window (launcher only, no Windows desktop)
+  → Windows auto-logs-in a restricted user, auto-starts the DU launcher
+  → launcher updates the shared game directory
+  → on launcher exit: `shutdown.exe /s /t 0` inside guest
+  → VM stops, SPICE window closes, du-updater exits
+```
+
+Key design decisions driven by the proposal:
+
+- **No WebView2-under-Wine.** WebView2 runs natively inside the Windows guest instead.
+- **No GPU passthrough.** Use VirtIO GPU + SPICE display. Target guest is Windows 10 x64; VM sized at 2 vCPU / 4 GB RAM / 32 GB dynamic qcow2.
+- **Game files live on the Linux side, not in the VM.** Share the Linux game directory into the guest via **VirtIO-FS** (fallback: SMB share; last resort if NTFS is required: a dedicated virtual disk). The Windows VM should not permanently store the game.
+- **Windows is a disposable runtime.** Nice-to-have: restore a clean VM snapshot before each launch and auto-recover a corrupted VM.
+
+## Expected Deliverables
+
+- Linux installer + VM creation scripts
+- libvirt XML domain definition
+- Windows setup PowerShell scripts (auto-login, restricted user, WebView2 install, DU launcher install, auto-start-on-login, auto-shutdown-on-launcher-exit)
+- Desktop launcher (`.desktop` shortcut) and CLI launcher (`du-updater`)
+- Documentation and build instructions
+
+## Constraints
+
+- **Do not redistribute Windows.** The user must supply their own official Windows ISO. Keep licensing compliant.
+- Minimize the amount of Windows ever visible to the user — the Windows desktop should never remain on screen after the launcher closes.
