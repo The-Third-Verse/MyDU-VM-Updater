@@ -26,6 +26,11 @@ du-updater (Linux script)
   via VirtIO-FS (fallback: SMB). Windows never permanently stores the game.
 - **Windows is a disposable runtime** — the desktop is never left visible.
 
+## Getting started
+
+See **[INSTALL.md](INSTALL.md)** for the step-by-step setup and first-run guide
+(creating the VM, loading the VirtIO disk driver during Windows setup, and daily use).
+
 ## Requirements
 
 - A Linux host with QEMU + KVM and libvirt

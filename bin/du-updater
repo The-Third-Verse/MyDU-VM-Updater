@@ -380,9 +380,9 @@ wait_for_shutdown() {
 open_viewer() {
     info "Opening the updater window..."
     # --wait: wait for the domain; --attach: use libvirt (no exposed SPICE port);
-    # the viewer exits on its own when the guest powers off.
-    virt-viewer --connect "$LIBVIRT_URI" --attach --wait --reconnect \
-        --title "Dual Universe Updater" "$VM_NAME" || true
+    # the viewer exits on its own when the guest powers off. (No --title: older
+    # virt-viewer builds reject it and abort.)
+    virt-viewer --connect "$LIBVIRT_URI" --attach --wait --reconnect "$VM_NAME" || true
 }
 
 # Best-effort clean stop if the VM is still running after the window closed.
