@@ -80,9 +80,11 @@ ${SMM_FEATURE}  </features>
     <controller type='virtio-serial'/>
 
     <!-- User-mode (SLIRP) networking: outbound internet with no host setup
-         or root; enough for the launcher to download updates. -->
+         or root; enough for the launcher to download updates.
+         e1000e (not virtio) so Windows has a built-in driver and gets internet
+         during install with no extra steps. virtio-net would need NetKVM. -->
     <interface type='user'>
-      <model type='virtio'/>
+      <model type='e1000e'/>
     </interface>
 
     <!-- VirtIO-FS share: the Linux game directory, mounted in the guest via
