@@ -87,6 +87,12 @@ Load it from the VirtIO CD:
 Windows copies files and reboots a few times inside the VM until it reaches the
 desktop.
 
+At the OOBE **"Let's connect you to a network"** step, choose **"I don't have
+internet" → "Continue with limited setup"** and create a **local account** — this
+is the restricted user the updater uses. Networking comes up automatically on the
+next full boot (the NIC is emulated **e1000e**, which Windows drives out of the
+box; SLIRP provides NAT internet, IP `10.0.2.15`, gateway `10.0.2.2`).
+
 ## 5. Set up the guest, then finalize
 
 Inside Windows, run the guest setup (auto-login restricted user, WebView2, the
@@ -145,6 +151,13 @@ window, or find it in the dock.
 
 **Windows Setup shows no disk**
 You skipped the VirtIO driver — see step 4 (Load driver → `viostor\w10\amd64`).
+
+**No internet in the guest**
+The VM uses an emulated **e1000e** NIC with SLIRP NAT, which works in Windows with
+no extra driver. If you changed the NIC to `virtio`, install **NetKVM** from the
+VirtIO CD (`NetKVM\w10\amd64`). Note a NIC-model change only takes effect after a
+**full power-off** of the VM (a guest reboot is not enough). Check the host has a
+user-net backend: `ldconfig -p | grep libslirp`.
 
 **Missing dependencies**
 Run the script; it lists everything missing at once with the install command for
