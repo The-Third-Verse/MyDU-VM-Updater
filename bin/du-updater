@@ -51,6 +51,8 @@ CHECK_ONLY=0      # --check-access : run the access check (with detail) and exit
 NO_CHECK=0        # --no-check : skip the game-directory access check
 FIX_ACCESS=0      # --fix-access : repair restricted permissions without asking
 DESKTOP=0         # --desktop : boot to a Windows desktop for inspection (no launcher)
+INSTALL_DESKTOP=0 # --install-desktop : install a .desktop menu entry + icon, then exit
+UNINSTALL_DESKTOP=0 # --uninstall-desktop : remove the .desktop entry + icon, then exit
 
 # --------------------------------------------------------------------------- #
 # Logging
@@ -85,6 +87,10 @@ Options:
       --uri URI         libvirt connection URI     (default: $LIBVIRT_URI)
       --silent          Run headless: no SPICE window; wait for auto-shutdown.
       --no-revert       Do not restore the clean snapshot before launching.
+      --install-desktop Install an application-menu entry + icon for $PROG, then
+                        exit. Run it once so $PROG appears in your launcher.
+      --uninstall-desktop
+                        Remove the application-menu entry + icon, then exit.
   -h, --help            Show this help and exit.
 
 Config file: $CONFIG_FILE
@@ -137,6 +143,8 @@ parse_args() {
             --uri)           LIBVIRT_URI="${2:?--uri requires a value}"; shift 2 ;;
             --silent)        SILENT=1; shift ;;
             --no-revert)     NO_REVERT=1; shift ;;
+            --install-desktop)   INSTALL_DESKTOP=1; shift ;;
+            --uninstall-desktop) UNINSTALL_DESKTOP=1; shift ;;
             -h|--help)       usage; exit 0 ;;
             --)              shift; break ;;
             -*)              die "unknown option: $1 (try --help)" ;;
@@ -444,6 +452,77 @@ ensure_stopped() {
 cleanup() { close_viewer; ensure_stopped; }
 
 # --------------------------------------------------------------------------- #
+# Desktop entry (application-menu launcher)
+# --------------------------------------------------------------------------- #
+# Install a freedesktop .desktop entry + icon so du-updater shows up in the
+# application menu and launches like a native app. The Exec path is resolved
+# now (to this script's real location) because a shipped static file can't know
+# where the repo was cloned or symlinked from.
+install_desktop() {
+    local self apps icons desk icon_name repo_icon exec_line
+    self="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
+    apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+    icons="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
+    desk="$apps/$PROG.desktop"
+    mkdir -p "$apps" "$icons"
+
+    # Use the icon shipped next to the script; otherwise fall back to a stock name.
+    repo_icon="$(dirname "$self")/../desktop/$PROG.svg"
+    if [ -f "$repo_icon" ]; then
+        cp -f "$repo_icon" "$icons/$PROG.svg"
+        icon_name="$PROG"
+    else
+        icon_name="applications-games"
+    fi
+
+    # Quote the Exec path only when it contains spaces (freedesktop quoting rules).
+    case "$self" in
+        *" "*) exec_line="Exec=\"$self\"" ;;
+        *)     exec_line="Exec=$self" ;;
+    esac
+
+    cat >"$desk" <<EOF
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Dual Universe Updater
+GenericName=Game Updater
+Comment=Update Dual Universe via a hidden Windows VM
+$exec_line
+Icon=$icon_name
+Terminal=false
+Categories=Game;
+Keywords=Dual Universe;DU;MyDU;update;launcher;
+StartupNotify=true
+EOF
+    chmod 644 "$desk"
+
+    command -v update-desktop-database >/dev/null 2>&1 && \
+        update-desktop-database "$apps" >/dev/null 2>&1 || true
+    command -v gtk-update-icon-cache >/dev/null 2>&1 && \
+        gtk-update-icon-cache -f -t "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor" >/dev/null 2>&1 || true
+
+    info "Installed desktop entry: $desk"
+    info "  Exec: $self"
+    info "  Icon: $icon_name"
+    info "It should now appear in your application menu as \"Dual Universe Updater\"."
+    info "Note: launching from the menu runs with no terminal, so it's for everyday"
+    info "updates. Do first-time setup (installing MyDU / fixing permissions) once"
+    info "from a terminal: $PROG --game-dir DIR"
+}
+
+uninstall_desktop() {
+    local apps icons desk
+    apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+    icons="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
+    desk="$apps/$PROG.desktop"
+    rm -f "$desk" "$icons/$PROG.svg"
+    command -v update-desktop-database >/dev/null 2>&1 && \
+        update-desktop-database "$apps" >/dev/null 2>&1 || true
+    info "Removed desktop entry and icon."
+}
+
+# --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
 main() {
@@ -452,6 +531,11 @@ main() {
 
     load_config
     parse_args "$@"
+
+    # Menu-entry management doesn't need a game directory or the VM; do it and exit.
+    [ "$UNINSTALL_DESKTOP" -eq 1 ] && { uninstall_desktop; exit 0; }
+    [ "$INSTALL_DESKTOP"   -eq 1 ] && { install_desktop;   exit 0; }
+
     resolve_game_dir
 
     # Persist whatever we resolved for next time.

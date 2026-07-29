@@ -14,12 +14,11 @@ Implementation in progress. `doc/Dual_Universe_Linux_Updater_VM_Proposal.md` hol
 
 - `windows/Setup-Guest.ps1` — one-time guest provisioning (restricted auto-login user, WinFsp + VirtIO guest tools + VirtioFsSvc, WebView2, boot script). Run as admin while the VirtIO CD is attached, before `--finalize`. Kiosk by default: replaces `explorer.exe` with the boot script for the restricted user (per-user `Winlogon\Shell` in the Default/user hive) so only the launcher shows — no desktop. `-NoKiosk` uses a logon scheduled task + normal desktop.
 - `windows/Start-Updater.ps1` — per-login boot script: mounts the share, reads `.du-updater/command`, installs/updates MyDU, runs the launcher, always shuts down (in `finally`) so `du-updater` sees the VM stop.
+- `desktop/du-updater.svg` + `du-updater --install-desktop` — application-menu entry. `--install-desktop` renders `~/.local/share/applications/du-updater.desktop` with the Exec path resolved to the script's real location (via `readlink -f`) and copies the icon into the hicolor theme; `--uninstall-desktop` removes both. `Terminal=false`, so it's for everyday runs (first-time install/permission prompts need a terminal).
 
 - `windows/autounattend.xml.in` — answer-file template for the hands-off path. `create-vm --unattended` renders it (BIOS/UEFI disk layout + w10/w11 driver path chosen from `--win11`), packs it plus the `.ps1` scripts onto a `DUCFG` config CD via xorriso/genisoimage, and boots; Windows self-installs and runs `Setup-Guest.ps1` at first logon. Not yet validated against a live ISO — the manual path is the fallback.
 
 `create-vm` data location is `--data-dir DIR` (default `$XDG_DATA_HOME`/`~/.local/share/du-updater`, per Linux user).
-
-Still to build: a `.desktop` shortcut.
 
 ## Guest control-file contract
 

@@ -201,6 +201,17 @@ It boots the VM hidden and the kiosk shell runs the launcher — no Windows desk
 is ever shown. When you close the launcher (or the viewer window), the VM powers
 off and `du-updater` exits.
 
+**Add it to your application menu (optional).** After that first terminal run, install
+a launcher shortcut so you can start it from your desktop's app menu:
+
+```bash
+du-updater --install-desktop
+```
+
+It appears as **Dual Universe Updater**. The menu shortcut runs with no terminal, so
+keep doing first-time setup and troubleshooting from a terminal; remove it later with
+`du-updater --uninstall-desktop`.
+
 - **First run** installs MyDU. The DU installer (Inno Setup) **refuses to install
   to a drive root**, so it installs into a **`DualUniverse` subfolder** of your
   game folder — the game ends up in `~/Games/DualUniverse/**DualUniverse**`, not

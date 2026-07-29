@@ -46,6 +46,21 @@ shuts down — when you close the launcher **or** the viewer window.
 | `--fix-access` | Repair restricted permissions (`chmod u+rwX`) without prompting. |
 | `--no-check` | Skip the access check entirely. |
 
+### Application menu
+
+| Option | Description |
+|--------|-------------|
+| `--install-desktop` | Install an application-menu entry (`Dual Universe Updater`) + icon, then exit. The launched command is resolved to this script's real path, so the menu shortcut works regardless of where the repo lives. |
+| `--uninstall-desktop` | Remove the menu entry + icon, then exit. |
+
+The menu shortcut launches with **no terminal** (`Terminal=false`), so it's meant
+for everyday updates once the game is installed. Do first-time setup (installing
+MyDU, repairing permissions) once from a terminal — from the menu those prompts
+have nowhere to appear and the run just aborts. The entry goes to
+`$XDG_DATA_HOME/applications/du-updater.desktop` (default
+`~/.local/share/applications/`) and the icon to
+`~/.local/share/icons/hicolor/scalable/apps/du-updater.svg`.
+
 ### libvirt
 
 | Option | Default | Description |
@@ -97,6 +112,7 @@ installs and re-prompts for the DU login every run).
 ```bash
 du-updater --game-dir ~/Games/DualUniverse   # first run (remembers the dir)
 du-updater                                    # subsequent runs
+du-updater --install-desktop                  # add it to the application menu
 du-updater --install --yes                    # non-interactive install
 du-updater --desktop                          # inspect the VM's Windows desktop
 du-updater --check-access                     # audit share permissions
