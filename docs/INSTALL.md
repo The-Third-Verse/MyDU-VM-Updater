@@ -15,8 +15,6 @@ There are two ways to build the VM:
 
 Both end at the same place: **[Everyday use](#everyday-use)**.
 
-> 📹 Video walkthrough: _(link coming soon)_
-
 ---
 
 ## Prerequisites (both paths)
