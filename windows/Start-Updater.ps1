@@ -75,9 +75,13 @@ function Install-MyDU {
     Log "Downloading MyDU installer: $Url"
     try   { Start-BitsTransfer -Source $Url -Destination $inst -ErrorAction Stop }
     catch { Invoke-WebRequest -Uri $Url -OutFile $inst -UseBasicParsing }
-    Log "Running MyDU installer (choose the shared game drive: $ShareRoot)"
-    # Interactive: the first-time install lets the user point MyDU at the share.
-    Start-Process -FilePath $inst -Wait
+    # Inno Setup silent install straight to the shared game folder, so first-time
+    # setup needs no wizard. $ShareRoot is a drive root ("Z:\") with no spaces, so
+    # /DIR is passed unquoted (a trailing "\" inside quotes would escape the quote).
+    $dir = $ShareRoot.TrimEnd('\') + '\'
+    Log "Installing MyDU silently to $dir"
+    Start-Process -FilePath $inst -Wait -ArgumentList `
+        '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOCANCEL',"/DIR=$dir"
 }
 
 # --------------------------------------------------------------------------- #
