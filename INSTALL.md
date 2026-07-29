@@ -75,6 +75,16 @@ done. Wait for it to shut off, then jump to step 5 (finalize). Needs an ISO
 authoring tool (`xorriso`, `genisoimage`, or `mkisofs`). If you'd rather do it by
 hand, skip `--unattended` and follow step 4.
 
+Add **`--auto-finalize`** to make it completely turnkey — the command waits for
+the VM to power off after provisioning and finalizes it for you (so you can skip
+step 5 too):
+
+```bash
+scripts/create-vm.sh --unattended --auto-finalize \
+                     --win-iso ~/Downloads/Win10_x64.iso \
+                     --game-dir ~/Games/DualUniverse
+```
+
 This creates the qcow2 disk, downloads the VirtIO-win driver ISO, defines the
 libvirt domain, attaches the Windows and VirtIO ISOs as boot CDs, and starts the
 VM. Open the console:

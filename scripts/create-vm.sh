@@ -43,6 +43,7 @@ GAME_DIR=""
 WIN_ISO=""
 VIRTIO_ISO=""
 FINALIZE=0
+AUTO_FINALIZE=0
 RECREATE=0
 WIN11=0
 RAM_SET=0
@@ -105,6 +106,8 @@ Options:
   --uri URI             libvirt URI (default: $LIBVIRT_URI)
   --recreate            Overwrite an existing disk / redefine the domain.
   --finalize            Eject install media and create the '$SNAPSHOT_NAME' snapshot.
+  --auto-finalize       After starting, wait for the VM to power off (end of the
+                        unattended install/provisioning) and finalize it.
   -h, --help            Show this help.
 
 Typical flow (manual):
@@ -143,8 +146,9 @@ parse_args() {
             --win11)       WIN11=1; shift ;;
             --vm)          VM_NAME="${2:?}"; shift 2 ;;
             --uri)         LIBVIRT_URI="${2:?}"; shift 2 ;;
-            --recreate)    RECREATE=1; shift ;;
-            --finalize)    FINALIZE=1; shift ;;
+            --recreate)      RECREATE=1; shift ;;
+            --finalize)      FINALIZE=1; shift ;;
+            --auto-finalize) AUTO_FINALIZE=1; shift ;;
             -h|--help)     usage; exit 0 ;;
             *)             die "unknown argument: $1 (try --help)" ;;
         esac
@@ -398,6 +402,16 @@ attach_install_media_and_start() {
     info "Starting VM"
     virsh_ start "$VM_NAME" >/dev/null
 
+    local finalize_note
+    if [ "$AUTO_FINALIZE" -eq 1 ]; then
+        finalize_note="--auto-finalize is on: this command will wait for the VM to
+power off and finalize it automatically."
+    else
+        finalize_note="Once the VM is shut off, finalize it:
+
+    scripts/create-vm.sh --finalize --vm \"$VM_NAME\""
+    fi
+
     if [ -n "$CONFIG_ISO" ]; then
         cat <<EOF
 
@@ -405,10 +419,8 @@ Unattended install started. Watch it (optional) with:
 
     virt-viewer --connect $LIBVIRT_URI --attach "$VM_NAME"
 
-Windows installs and provisions itself, then powers off on its own. Once the VM
-is shut off, finalize it:
-
-    scripts/create-vm.sh --finalize --vm "$VM_NAME"
+Windows installs and provisions itself, then powers off on its own.
+$finalize_note
 EOF
     else
         cat <<EOF
@@ -420,12 +432,29 @@ Windows installer is booting. Open the console with:
 During setup, when asked where to install Windows, choose "Load driver" and
 pick the viostor driver for Windows ($WINPE_DRIVER_DIR/amd64) from the VirtIO-win CD.
 
-When Windows is installed, run the Windows setup scripts (windows/Setup-Guest.ps1),
-then finalize:
-
-    scripts/create-vm.sh --finalize --vm "$VM_NAME"
+When Windows is installed, run the Windows setup scripts (windows/Setup-Guest.ps1).
+$finalize_note
 EOF
     fi
+}
+
+# Wait for a *stable* power-off — the final shutdown, not a Windows Setup reboot
+# (reboots keep the domain running via on_reboot=restart; a real poweroff goes to
+# "shut off" and stays there).
+wait_for_final_shutdown() {
+    info "Waiting for the VM to finish and power off (this can take a while)..."
+    local state stable=0
+    while :; do
+        state="$(virsh_ domstate "$VM_NAME" 2>/dev/null || echo unknown)"
+        if [ "$state" = "shut off" ]; then
+            stable=$((stable + 1))
+            [ "$stable" -ge 4 ] && break   # ~20s continuously off
+        else
+            stable=0
+        fi
+        sleep 5
+    done
+    info "VM powered off."
 }
 
 # --------------------------------------------------------------------------- #
@@ -503,6 +532,11 @@ Download one from Microsoft:
     render_and_define >/dev/null
     [ "$UNATTENDED" -eq 1 ] && build_config_iso
     attach_install_media_and_start
+
+    if [ "$AUTO_FINALIZE" -eq 1 ]; then
+        wait_for_final_shutdown
+        finalize
+    fi
 }
 
 main "$@"
