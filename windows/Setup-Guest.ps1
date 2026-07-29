@@ -27,6 +27,7 @@ param(
     [string]$InstallDir  = "$env:ProgramData\du-updater",
     [string]$WinFspUrl   = "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi",
     [string]$WebView2Url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703",
+    [string]$VCRedistUrl = "https://aka.ms/vc14/vc_redist.x64.exe",
     # Kiosk (default): replace explorer.exe with the boot script for the restricted
     # user, so only the launcher shows - no desktop, no taskbar. -NoKiosk keeps the
     # normal desktop and runs the boot script via a logon scheduled task instead.
@@ -134,6 +135,15 @@ function Enable-VirtioFs {
     } else {
         Warn "VirtioFsSvc not found - the VirtIO-FS share won't mount. Ensure the guest tools installed viofs, and WinFsp is present."
     }
+}
+
+function Install-VCRedist {
+    # The DU launcher's own VC++ install step fails on some Windows builds (notably
+    # Windows 11), so pre-install the x64 runtime. /quiet auto-accepts the licence.
+    $exe = Join-Path $env:TEMP "vc_redist.x64.exe"
+    Get-File -Url $VCRedistUrl -OutFile $exe
+    Log "Installing Visual C++ Redistributable (x64)"
+    Start-Process $exe -ArgumentList '/install','/quiet','/norestart' -Wait
 }
 
 function Install-WebView2 {
@@ -247,6 +257,7 @@ Install-WinFsp
 Install-VirtioGuestTools -VirtioDrive $virtio
 Enable-VirtioFs
 Install-WebView2
+Install-VCRedist
 Deploy-BootScript
 if ($NoKiosk) { Install-BootTask } else { Set-KioskShell }
 Disable-Services
