@@ -246,7 +246,7 @@ configure_firmware() {
     OS_FIRMWARE_ATTR=" firmware='efi'"
     FIRMWARE_BLOCK=$'    <firmware>\n      <feature enabled=\'yes\' name=\'enrolled-keys\'/>\n      <feature enabled=\'yes\' name=\'secure-boot\'/>\n    </firmware>\n    <loader secure=\'yes\'/>\n'
     SMM_FEATURE=$'    <smm state=\'on\'/>\n'
-    TPM_DEVICE=$'    <tpm model=\'tpm-crd\'>\n      <backend type=\'emulator\' version=\'2.0\'/>\n    </tpm>\n'
+    TPM_DEVICE=$'    <tpm model=\'tpm-crb\'>\n      <backend type=\'emulator\' version=\'2.0\'/>\n    </tpm>\n'
 
     # Windows 11 needs more room than the Win10 defaults.
     [ "$RAM_SET" -eq 0 ]  && MEM_MIB=6144
