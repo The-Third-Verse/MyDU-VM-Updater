@@ -360,25 +360,27 @@ configure_unattend() {
     fi
 }
 
-# Render autounattend.xml + bundle the guest scripts onto a small ISO9660 CD that
-# Windows Setup auto-detects.
+# Build the DUCFG CD: always bundles the guest scripts (so both manual and
+# unattended installs can reach Setup-Guest.ps1); adds autounattend.xml only in
+# unattended mode (its presence is what triggers a hands-off install).
 build_config_iso() {
-    [ -f "$UNATTEND_TEMPLATE" ] || die "unattended template not found: $UNATTEND_TEMPLATE"
-    configure_unattend
-    local stage="$DATA_HOME/unattend"
+    local stage="$DATA_HOME/guestcd"
     rm -rf "$stage"; mkdir -p "$stage"
-
-    info "Rendering autounattend.xml (locale $LOCALE, drivers $WINPE_DRIVER_DIR)"
-    LOCALE="$LOCALE" PRODUCT_KEY="$PRODUCT_KEY" COMPUTER_NAME="$VM_NAME" \
-    PROV_USER="$PROV_USER" PROV_PASS="$PROV_PASS" WINPE_DRIVER_DIR="$WINPE_DRIVER_DIR" \
-    DISK_CONFIG="$DISK_CONFIG" OS_PARTITION_ID="$OS_PARTITION_ID" \
-        envsubst '${LOCALE} ${PRODUCT_KEY} ${COMPUTER_NAME} ${PROV_USER} ${PROV_PASS} ${WINPE_DRIVER_DIR} ${DISK_CONFIG} ${OS_PARTITION_ID}' \
-        <"$UNATTEND_TEMPLATE" >"$stage/autounattend.xml"
-
     cp "$REPO_DIR/windows/Setup-Guest.ps1" "$REPO_DIR/windows/Start-Updater.ps1" "$stage/"
 
-    CONFIG_ISO="$DATA_HOME/du-unattend.iso"
-    info "Building unattended config ISO -> $CONFIG_ISO"
+    if [ "$UNATTENDED" -eq 1 ]; then
+        [ -f "$UNATTEND_TEMPLATE" ] || die "unattended template not found: $UNATTEND_TEMPLATE"
+        configure_unattend
+        info "Rendering autounattend.xml (locale $LOCALE, drivers $WINPE_DRIVER_DIR)"
+        LOCALE="$LOCALE" PRODUCT_KEY="$PRODUCT_KEY" COMPUTER_NAME="$VM_NAME" \
+        PROV_USER="$PROV_USER" PROV_PASS="$PROV_PASS" WINPE_DRIVER_DIR="$WINPE_DRIVER_DIR" \
+        DISK_CONFIG="$DISK_CONFIG" OS_PARTITION_ID="$OS_PARTITION_ID" \
+            envsubst '${LOCALE} ${PRODUCT_KEY} ${COMPUTER_NAME} ${PROV_USER} ${PROV_PASS} ${WINPE_DRIVER_DIR} ${DISK_CONFIG} ${OS_PARTITION_ID}' \
+            <"$UNATTEND_TEMPLATE" >"$stage/autounattend.xml"
+    fi
+
+    CONFIG_ISO="$DATA_HOME/du-guest.iso"
+    info "Building guest CD (scripts$([ "$UNATTENDED" -eq 1 ] && echo ' + autounattend')) -> $CONFIG_ISO"
     if command -v xorriso >/dev/null 2>&1; then
         xorriso -as mkisofs -J -R -V DUCFG -o "$CONFIG_ISO" "$stage" >/dev/null 2>&1
     elif command -v genisoimage >/dev/null 2>&1; then
@@ -434,7 +436,8 @@ Windows installer is booting. Open the console with:
 During setup, when asked where to install Windows, choose "Load driver" and
 pick the viostor driver for Windows ($WINPE_DRIVER_DIR/amd64) from the VirtIO-win CD.
 
-When Windows is installed, run the Windows setup scripts (windows/Setup-Guest.ps1).
+When Windows reaches the desktop, open PowerShell as Administrator and run
+Setup-Guest.ps1 from the DUCFG CD (the drive containing Setup-Guest.ps1).
 $finalize_note
 EOF
     fi
@@ -537,7 +540,12 @@ Download one from Microsoft:
     create_disk
     fetch_virtio_iso
     render_and_define >/dev/null
-    [ "$UNATTENDED" -eq 1 ] && build_config_iso
+    if [ "$UNATTENDED" -eq 1 ] || have_iso_tool; then
+        build_config_iso   # scripts CD (+ autounattend when --unattended)
+    else
+        warn "No ISO tool (xorriso/genisoimage/mkisofs): guest scripts won't be on a CD.
+Copy windows/*.ps1 into the guest yourself before running Setup-Guest.ps1."
+    fi
     attach_install_media_and_start
 
     if [ "$AUTO_FINALIZE" -eq 1 ]; then
