@@ -70,15 +70,28 @@ function Get-File {
 function New-RestrictedUser {
     $sec = ConvertTo-SecureString $Password -AsPlainText -Force
     if (-not (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue)) {
-        Log "Creating restricted user '$UserName'"
+        Log "Creating runtime user '$UserName'"
         New-LocalUser -Name $UserName -Password $sec -FullName "DU Updater" `
-            -Description "Restricted Dual Universe updater user" `
+            -Description "Dual Universe updater user" `
             -PasswordNeverExpires -UserMayNotChangePassword | Out-Null
     } else {
         Log "User '$UserName' already exists"
     }
-    # Standard user only (member of Users, never Administrators).
-    Add-LocalGroupMember -Group "Users" -Member $UserName -ErrorAction SilentlyContinue
+    # The MyDU installer requires elevation, so the runtime user must be an
+    # administrator; combined with Set-SilentElevation this avoids UAC prompts
+    # in the hidden appliance. (Disposable, isolated VM — acceptable trade-off.)
+    Add-LocalGroupMember -Group "Administrators" -Member $UserName -ErrorAction SilentlyContinue
+}
+
+# Auto-elevate admin apps without a UAC prompt, so the launcher/installer never
+# blocks the hidden VM waiting for a click or password.
+function Set-SilentElevation {
+    Log "Disabling UAC prompts (silent elevation) for the appliance"
+    $sys = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+    # 0 = admins elevate without any prompt; keep installer detection on so the
+    # MyDU installer still auto-elevates.
+    Set-ItemProperty $sys ConsentPromptBehaviorAdmin 0
+    Set-ItemProperty $sys PromptOnSecureDesktop 0
 }
 
 function Set-AutoLogon {
@@ -191,6 +204,7 @@ $virtio = Get-VirtioDrive
 if ($virtio) { Log "VirtIO-win CD: $virtio" } else { Warn "VirtIO-win CD not detected" }
 
 New-RestrictedUser
+Set-SilentElevation
 Set-AutoLogon
 Install-WinFsp
 Install-VirtioGuestTools -VirtioDrive $virtio
