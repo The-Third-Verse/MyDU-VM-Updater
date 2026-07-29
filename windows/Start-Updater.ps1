@@ -167,6 +167,14 @@ try {
     $launcher = Find-Launcher $script:Share $exe
     Log ("Command: ACTION={0} LAUNCHER_EXE={1}" -f $cfg['ACTION'], $exe)
 
+    # Inspection mode: give a normal desktop instead of the launcher, and stay
+    # alive so the session persists. The user shuts Windows down manually.
+    if ($cfg['ACTION'] -eq 'desktop') {
+        Log "Desktop mode: launching Explorer. Shut Windows down (Start > Power) when done."
+        Start-Process explorer.exe
+        while ($true) { Start-Sleep -Seconds 3600 }
+    }
+
     if ($cfg['ACTION'] -eq 'install' -or -not $launcher) {
         Install-MyDU -Url $cfg['INSTALLER_URL'] -ShareRoot $script:Share
         $launcher = Find-Launcher $script:Share $exe
