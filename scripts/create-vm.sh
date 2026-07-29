@@ -494,9 +494,11 @@ finalize() {
 
     cat <<EOF
 
-Done. du-updater restores this '$SNAPSHOT_NAME' snapshot before each run by
-default, so the VM stays disposable (only the game files on the share persist).
-Use 'du-updater --no-revert' to keep guest changes between runs.
+Done. The '$SNAPSHOT_NAME' snapshot is saved. By default du-updater KEEPS guest
+changes between runs, so the launcher install, Visual C++ redist and DU login
+persist. For a disposable VM that reverts to this snapshot each run (re-running
+first-time installs every time), set CLEAN_SNAPSHOT="$SNAPSHOT_NAME" in
+$CONFIG_FILE.
 EOF
 }
 

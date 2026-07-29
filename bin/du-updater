@@ -29,10 +29,11 @@ VM_NAME="${DU_VM_NAME:-du-updater}"
 LIBVIRT_URI="${DU_LIBVIRT_URI:-qemu:///session}"
 # VirtIO-FS mount tag the Windows guest maps the game directory from.
 SHARE_TAG="${DU_SHARE_TAG:-dushare}"
-# Clean snapshot restored before each launch, so the VM stays disposable (only the
-# game files on the share persist). Defaults to 'clean'; skipped if it doesn't
-# exist yet. Disable with --no-revert or DU_CLEAN_SNAPSHOT="".
-CLEAN_SNAPSHOT="${DU_CLEAN_SNAPSHOT-clean}"
+# Optional: restore a clean snapshot before each launch to keep the VM disposable.
+# OFF by default so the launcher install, Visual C++ redist, and DU login persist
+# across runs (otherwise they re-install/re-prompt every time). Enable for a
+# pristine VM each run with DU_CLEAN_SNAPSHOT=clean (or set it in the config).
+CLEAN_SNAPSHOT="${DU_CLEAN_SNAPSHOT:-}"
 # Launcher executable expected inside the game directory.
 LAUNCHER_EXE="${DU_LAUNCHER_EXE:-dual-launcher.exe}"
 # Official MyDU installer, used by the guest when the launcher is missing.
