@@ -353,7 +353,8 @@ maybe_revert_snapshot() {
         virsh_ snapshot-revert "$VM_NAME" "$CLEAN_SNAPSHOT" \
             || warn "snapshot revert failed; continuing with current VM state."
     else
-        warn "clean snapshot '$CLEAN_SNAPSHOT' not found; skipping revert."
+        # Normal before the VM is finalized; not an error.
+        info "No '$CLEAN_SNAPSHOT' snapshot yet; skipping revert."
     fi
 }
 
