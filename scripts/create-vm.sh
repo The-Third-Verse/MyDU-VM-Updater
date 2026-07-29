@@ -155,7 +155,9 @@ parse_args() {
     done
 }
 
-virsh_() { virsh --connect "$LIBVIRT_URI" "$@"; }
+# LC_ALL=C so libvirt state strings ("running", "shut off", ...) aren't localized
+# — parsing depends on the exact English words.
+virsh_() { LC_ALL=C virsh --connect "$LIBVIRT_URI" "$@"; }
 
 # Suggest a distro-appropriate install command for a required tool.
 install_hint() {
