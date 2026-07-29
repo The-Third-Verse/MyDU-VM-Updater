@@ -1,7 +1,7 @@
 <!--
   Runtime libvirt domain for the Dual Universe updater VM.
 
-  This is a TEMPLATE: scripts/create-vm.sh renders the ${...} placeholders with
+  This is a TEMPLATE: bin/create-vm renders the ${...} placeholders with
   envsubst and defines the result. It is the authoritative *runtime* definition
   (boots from the disk, no install media). During OS installation the create
   script temporarily attaches the Windows and VirtIO-win ISOs as boot CD-ROMs.
@@ -12,7 +12,7 @@
   Runs on qemu:///session so no root is required.
 
   The firmware/TPM template slots are empty for Windows 10 (legacy BIOS). For
-  Windows 11 (create-vm.sh win11 mode) they are filled with UEFI + Secure Boot
+  Windows 11 (create-vm win11 mode) they are filled with UEFI + Secure Boot
   and an emulated TPM 2.0, which requires swtpm and OVMF on the host.
 -->
 <domain type='kvm'>
@@ -33,7 +33,7 @@
     <type arch='x86_64' machine='q35'>hvm</type>
 ${FIRMWARE_BLOCK}    <bootmenu enable='no'/>
   </os>
-  <!-- Boot order is set per-device (disk boot order='3'); create-vm.sh gives the
+  <!-- Boot order is set per-device (disk boot order='3'); create-vm gives the
        install CD-ROMs order 1 and 2. Do NOT add <os><boot> — libvirt rejects
        mixing os/boot with per-device boot elements. -->
 

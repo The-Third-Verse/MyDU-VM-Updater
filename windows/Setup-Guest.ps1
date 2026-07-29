@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Run this ONCE, as Administrator, after installing Windows and while the
-    VirtIO-win CD is still attached (i.e. before `create-vm.sh --finalize`).
+    VirtIO-win CD is still attached (i.e. before `create-vm --finalize`).
     It:
       * creates a restricted local user and enables auto-login for it,
       * installs WinFsp + the VirtIO guest tools (viofs, NetKVM, balloon, qemu-ga)
@@ -12,7 +12,7 @@
       * installs the Microsoft Edge WebView2 runtime (needed by the DU launcher),
       * installs Start-Updater.ps1 and registers it to run at that user's login.
 
-    After it finishes: shut Windows down, then run `create-vm.sh --finalize` on
+    After it finishes: shut Windows down, then run `create-vm --finalize` on
     the host. From then on `du-updater` drives everything automatically.
 
 .NOTES
@@ -270,7 +270,7 @@ Write-Host @"
 Next steps:
   1. Shut Windows down completely (Start > Power > Shut down).
   2. On the Linux host, finalize the VM:
-         scripts/create-vm.sh --finalize
+         bin/create-vm --finalize
   3. From then on just run:  du-updater
 
 The first time the launcher is missing from the game folder, du-updater will

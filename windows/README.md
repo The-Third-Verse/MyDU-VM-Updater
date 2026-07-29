@@ -3,16 +3,16 @@
 These scripts turn a freshly installed Windows guest into the disposable Dual
 Universe updater runtime. Run them **once**, inside the VM, after Windows is
 installed and while the VirtIO-win CD is still attached (before
-`create-vm.sh --finalize`).
+`create-vm --finalize`).
 
 | Script | When | What it does |
 |--------|------|--------------|
 | `Setup-Guest.ps1` | once, as Administrator | restricted auto-login user, WinFsp + VirtIO guest tools (viofs/NetKVM/balloon/qemu-ga), VirtioFsSvc, WebView2, and registers the boot task |
 | `Start-Updater.ps1` | every login (auto) | mounts share → reads the command file → installs/updates MyDU → runs the launcher → shuts down |
-| `autounattend.xml.in` | build-time template | rendered by `create-vm.sh --unattended` onto a config CD; drives a hands-off Windows install that runs `Setup-Guest.ps1` automatically at first logon |
+| `autounattend.xml.in` | build-time template | rendered by `create-vm --unattended` onto a config CD; drives a hands-off Windows install that runs `Setup-Guest.ps1` automatically at first logon |
 
 **Two ways to provision.** Run `Setup-Guest.ps1` by hand (below), or let
-`create-vm.sh --unattended` do the whole install + provisioning automatically
+`create-vm --unattended` do the whole install + provisioning automatically
 (it puts these scripts on a config CD and calls `Setup-Guest.ps1` for you).
 
 ## How the two sides talk
@@ -41,7 +41,7 @@ writes `\.du-updater\guest.log` back so you can read the run log from Linux.
    host's `dushare`).
 3. When it finishes, **shut Windows down**, then on the host run:
    ```bash
-   scripts/create-vm.sh --finalize
+   bin/create-vm --finalize
    ```
 
 ## First launch / installing MyDU

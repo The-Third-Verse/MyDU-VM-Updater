@@ -28,15 +28,18 @@ du-updater (Linux script)
 
 ## Getting started
 
-See **[INSTALL.md](INSTALL.md)** for the step-by-step setup and first-run guide
+See **[INSTALL.md](docs/INSTALL.md)** for the step-by-step setup and first-run guide
 (creating the VM, loading the VirtIO disk driver during Windows setup, and daily use).
+
+Command references: **[`create-vm`](docs/create-vm.md)** (build/finalize the VM) and
+**[`du-updater`](docs/du-updater.md)** (everyday use).
 
 ## Requirements
 
 - A Linux host with QEMU + KVM and libvirt
 - An **official Windows ISO that you provide yourself**, downloaded from Microsoft:
   - Windows 10: <https://www.microsoft.com/en-us/software-download/windows10ISO>
-  - Windows 11: <https://www.microsoft.com/en-us/software-download/windows11> (use `create-vm.sh --win11`; also needs `swtpm` + OVMF for TPM 2.0 / Secure Boot)
+  - Windows 11: <https://www.microsoft.com/en-us/software-download/windows11> (use `create-vm --win11`; also needs `swtpm` + OVMF for TPM 2.0 / Secure Boot)
 - Suggested VM sizing: 2 vCPU, 4 GB RAM, 32 GB dynamic qcow2 disk (Windows 11 defaults to 6 GB / 64 GB)
 
 ## Dependencies
@@ -50,12 +53,12 @@ distro-specific install command for anything missing):
 | `virsh` | libvirt CLI | both |
 | `virtiofsd` | serves the VirtIO-FS game share | both (VM start) |
 | `virt-viewer` | SPICE window | `du-updater` |
-| `virt-xml` | edit the domain (share path, install media) | `create-vm.sh`, `du-updater` |
-| `qemu-img` | create the qcow2 disk | `create-vm.sh` |
-| `envsubst` | render the domain template | `create-vm.sh` |
-| `curl` | download the VirtIO-win ISO | `create-vm.sh` |
-| `swtpm` + OVMF | TPM 2.0 + UEFI/Secure Boot | `create-vm.sh --win11` |
-| `xorriso` (or `genisoimage`/`mkisofs`) | build the unattended config CD | `create-vm.sh --unattended` |
+| `virt-xml` | edit the domain (share path, install media) | `create-vm`, `du-updater` |
+| `qemu-img` | create the qcow2 disk | `create-vm` |
+| `envsubst` | render the domain template | `create-vm` |
+| `curl` | download the VirtIO-win ISO | `create-vm` |
+| `swtpm` + OVMF | TPM 2.0 + UEFI/Secure Boot | `create-vm --win11` |
+| `xorriso` (or `genisoimage`/`mkisofs`) | build the unattended config CD | `create-vm --unattended` |
 
 Install everything in one go:
 

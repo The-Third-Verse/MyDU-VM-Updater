@@ -31,7 +31,7 @@ git clone https://github.com/The-Third-Verse/MyDU-VM-Updater.git
 cd MyDU-VM-Updater
 ```
 
-The launcher is `bin/du-updater` and the VM tooling is `scripts/create-vm.sh`.
+The launcher is `bin/du-updater` and the VM tooling is `bin/create-vm`.
 To run `du-updater` from anywhere (recommended), symlink it onto your `PATH`:
 
 ```bash
@@ -45,7 +45,7 @@ If you skip that, just call it as `bin/du-updater` from the repo directory.
 ### 2. Host dependencies
 
 Install QEMU/KVM, libvirt, `virtiofsd`, `virt-viewer`, and the helpers — see the
-[Dependencies](README.md#dependencies) section of the README for the one-line
+[Dependencies](../README.md#dependencies) section of the README for the one-line
 command for your distro. The scripts also check at startup and print the exact
 install command for anything missing.
 
@@ -77,7 +77,7 @@ Point it at your ISO and the Linux folder where the game should live (this folde
 is shared into the VM and is where the game files end up):
 
 ```bash
-scripts/create-vm.sh --unattended --auto-finalize \
+bin/create-vm --unattended --auto-finalize \
                      --win-iso ~/Downloads/Win10_x64.iso \
                      --game-dir ~/Games/DualUniverse
 ```
@@ -117,7 +117,7 @@ Same result, but you drive Windows Setup and the guest provisioning yourself.
 ### Step 1 — Create the VM and boot the installer
 
 ```bash
-scripts/create-vm.sh --win-iso ~/Downloads/Win10_x64.iso \
+bin/create-vm --win-iso ~/Downloads/Win10_x64.iso \
                      --game-dir ~/Games/DualUniverse
 ```
 
@@ -171,7 +171,7 @@ window — let it finish.)
 Shut Windows down (Start → Power → Shut down), then on the host:
 
 ```bash
-scripts/create-vm.sh --finalize
+bin/create-vm --finalize
 ```
 
 This ejects the install media and snapshots the `clean` baseline. Go to
@@ -196,18 +196,21 @@ After that, just:
 du-updater
 ```
 
-It reverts the VM to the clean snapshot, boots it hidden, and the kiosk shell runs
-the launcher — no Windows desktop is ever shown. When you close the launcher, the
-VM powers off and `du-updater` exits.
+It boots the VM hidden and the kiosk shell runs the launcher — no Windows desktop
+is ever shown. When you close the launcher (or the viewer window), the VM powers
+off and `du-updater` exits.
 
-- **First run** installs MyDU: it silently installs the launcher to the shared
-  drive (`…\DualUniverse`) and starts it. The launcher then downloads the game
-  **into your Linux game folder** (`~/Games/DualUniverse/DualUniverse`).
-- **Later runs** find the launcher and just start it to update.
+- **First run** installs MyDU. The DU installer (Inno Setup) **refuses to install
+  to a drive root**, so it installs into a **`DualUniverse` subfolder** of your
+  game folder — the game ends up in `~/Games/DualUniverse/**DualUniverse**`, not
+  directly in `~/Games/DualUniverse`. `du-updater` finds the launcher there
+  automatically (recursive search), so you still just pass the parent game folder.
+- **Later runs** find the launcher and start it to update.
 
-By default the VM is disposable — it reverts to the `clean` snapshot each run, so
-the Windows side stays pristine and only the game files (on the Linux share)
-persist. Opt out per run with `--no-revert`.
+By default the VM **keeps its state** between runs, so the launcher install, the
+VC++ runtime, and your DU login persist. For a disposable VM that reverts to the
+`clean` snapshot each run instead (re-running first-time installs every time), set
+`CLEAN_SNAPSHOT="clean"` in `~/.config/du-updater/config`.
 
 ---
 
@@ -219,10 +222,10 @@ persist. Opt out per run with `--no-revert`.
 | `provision` | `Provision!1` | temporary admin used during the unattended install |
 
 The guest keyboard layout is **US (QWERTY)** (`en-US`; change with
-`create-vm.sh --locale`). On a physical AZERTY keyboard, type the passwords **as if
+`create-vm --locale`). On a physical AZERTY keyboard, type the passwords **as if
 on a US keyboard** (`!` is Shift+1, `1` is the top-row digit).
 
-Change defaults via `create-vm.sh` (`--locale`, `--product-key`) and
+Change defaults via `create-vm` (`--locale`, `--product-key`) and
 `Setup-Guest.ps1` (`-UserName`, `-Password`).
 
 ---
@@ -241,7 +244,7 @@ step 2 (Load driver → `viostor\w10\amd64`).
 package (see Dependencies), then retry.
 
 **`error: domain 'du-updater' already exists`.** It's already built — just run
-`du-updater`. To rebuild from scratch, add `--recreate` to `create-vm.sh`.
+`du-updater`. To rebuild from scratch, add `--recreate` to `create-vm`.
 
 **The console window won't come to the front (Wayland/GNOME).** Wayland won't let
 apps raise their own windows — press **Super** and click it.

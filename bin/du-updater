@@ -68,9 +68,10 @@ Launch the Dual Universe updater. The game files stay on Linux and are shared
 into a hidden Windows VM that runs the official launcher.
 
 Options:
-  -g, --game-dir DIR    Directory where the game is (or should be) installed.
-                        Persisted to the config file for future runs. Created
-                        if it does not exist.
+  -g, --game-dir DIR    Parent folder for the game. MyDU installs into a
+                        'DualUniverse' subfolder of it (the DU installer refuses a
+                        drive root), and the launcher is found there recursively.
+                        Persisted to the config; created if it does not exist.
       --set-game-dir DIR
                         Save DIR as the game directory and exit (no launch).
       --install         If $LAUNCHER_EXE is missing, install MyDU without asking.
@@ -312,7 +313,7 @@ plan_action() {
 ensure_domain_exists() {
     if ! virsh_ dominfo "$VM_NAME" >/dev/null 2>&1; then
         die "libvirt domain '$VM_NAME' not found on $LIBVIRT_URI.
-Create the VM first (see scripts/create-vm.sh), or pass --vm NAME if it has a
+Create the VM first (see bin/create-vm), or pass --vm NAME if it has a
 different name."
     fi
 }

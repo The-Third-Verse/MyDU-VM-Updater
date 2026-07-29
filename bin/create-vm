@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# create-vm.sh — provision the Dual Universe updater VM (libvirt / qemu:///session).
+# create-vm — provision the Dual Universe updater VM (libvirt / qemu:///session).
 #
 # Provisioning (default):
 #   1. Create the qcow2 disk.
@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-readonly PROG="create-vm.sh"
+readonly PROG="create-vm"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly REPO_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 readonly TEMPLATE="$REPO_DIR/libvirt/du-updater.xml.in"
@@ -111,14 +111,14 @@ Options:
   -h, --help            Show this help.
 
 Typical flow (manual):
-  scripts/create-vm.sh --win-iso ~/Win10.iso --game-dir ~/Games/DualUniverse
+  bin/create-vm --win-iso ~/Win10.iso --game-dir ~/Games/DualUniverse
   # ... install Windows in the SPICE window, run the Windows setup scripts ...
-  scripts/create-vm.sh --finalize
+  bin/create-vm --finalize
 
 Typical flow (automatic):
-  scripts/create-vm.sh --unattended --win-iso ~/Win10.iso --game-dir ~/Games/DualUniverse
+  bin/create-vm --unattended --win-iso ~/Win10.iso --game-dir ~/Games/DualUniverse
   # ... VM installs + provisions itself, then powers off ...
-  scripts/create-vm.sh --finalize
+  bin/create-vm --finalize
 EOF
 }
 
@@ -423,7 +423,7 @@ power off and finalize it automatically."
     else
         finalize_note="Once the VM is shut off, finalize it:
 
-    scripts/create-vm.sh --finalize --vm \"$VM_NAME\""
+    bin/create-vm --finalize --vm \"$VM_NAME\""
     fi
 
     if [ -n "$CONFIG_ISO" ]; then

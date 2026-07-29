@@ -2,7 +2,7 @@
 <!--
   Unattended answer file for the Dual Universe updater guest.
 
-  TEMPLATE: rendered by create-vm.sh in unattended mode, which fills the ${...}
+  TEMPLATE: rendered by create-vm in unattended mode, which fills the ${...}
   placeholders and packs the result (plus the windows/*.ps1 scripts) onto a small
   config CD labelled DUCFG. Windows Setup auto-reads autounattend.xml from that CD.
 
