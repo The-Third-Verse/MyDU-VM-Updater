@@ -180,6 +180,18 @@ Change the defaults via `create-vm.sh` (`--locale`, edition key) and the
 
 ## Troubleshooting
 
+**"Dual Universe - Low Memory" dialog on launch (normal — click Continue)**
+The DU launcher checks whether the machine can *play* the game and warns:
+
+> Your computer have only 4095 MB of RAM.
+> Your computer have only 0 MB of Video RAM.
+> This may result in unexpected behaviors with the game and possible crashes. Continue?
+
+This is **expected and harmless**. The VM only *updates* the game — you play on the
+native Linux client, not inside the VM — so its modest RAM and lack of dedicated
+video memory don't matter. Click **Continue** (OK) and the update proceeds normally.
+
+
 **`error: unsupported configuration: Unable to find a satisfying virtiofsd`**
 The VirtIO-FS daemon isn't installed. Install the `virtiofsd` package (see
 Dependencies), then start the VM again.
