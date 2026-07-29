@@ -473,6 +473,11 @@ finalize() {
     [ -f "$xml" ] || die "rendered runtime XML not found: $xml (re-run provisioning)."
 
     info "Re-defining clean runtime domain (removes install CD-ROMs)"
+    # The template has no <uuid>, so a plain `define` would collide with the
+    # existing domain's UUID. Undefine first (keeps the disk + nvram), then define
+    # the clean XML.
+    virsh_ undefine "$VM_NAME" --keep-nvram >/dev/null 2>&1 \
+        || virsh_ undefine "$VM_NAME" >/dev/null 2>&1 || true
     virsh_ define "$xml" >/dev/null
 
     if virsh_ snapshot-info "$VM_NAME" "$SNAPSHOT_NAME" >/dev/null 2>&1; then
