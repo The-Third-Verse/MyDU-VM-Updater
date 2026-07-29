@@ -392,13 +392,20 @@ wait_for_shutdown() {
     done
 }
 
-# Open the SPICE window and block until it closes (VM shut down or user closed).
+# Open the SPICE window in the background so we control its lifetime. No
+# --reconnect (that keeps the window open after the guest powers off); we close
+# it explicitly once the VM has shut down. (No --title: older builds reject it.)
 open_viewer() {
     info "Opening the updater window..."
-    # --wait: wait for the domain; --attach: use libvirt (no exposed SPICE port);
-    # the viewer exits on its own when the guest powers off. (No --title: older
-    # virt-viewer builds reject it and abort.)
-    virt-viewer --connect "$LIBVIRT_URI" --attach --wait --reconnect "$VM_NAME" || true
+    virt-viewer --connect "$LIBVIRT_URI" --attach --wait "$VM_NAME" >>"$LOG_FILE" 2>&1 &
+    VIEWER_PID=$!
+}
+
+# Close the SPICE window if it's still open (e.g. after the VM powered off).
+close_viewer() {
+    [ -n "${VIEWER_PID:-}" ] || return 0
+    kill "$VIEWER_PID" >/dev/null 2>&1 || true
+    VIEWER_PID=""
 }
 
 # Best-effort clean stop if the VM is still running after the window closed.
@@ -417,7 +424,7 @@ ensure_stopped() {
     virsh_ destroy "$VM_NAME" >/dev/null 2>&1 || true
 }
 
-cleanup() { ensure_stopped; }
+cleanup() { close_viewer; ensure_stopped; }
 
 # --------------------------------------------------------------------------- #
 # Main
@@ -469,8 +476,10 @@ main() {
         wait_for_shutdown
     else
         open_viewer
-        ensure_stopped
+        wait_for_shutdown   # blocks until the guest powers off (session done)
+        close_viewer        # then close the SPICE window automatically
     fi
+    ensure_stopped
 
     info "Done. Update session finished."
 }
