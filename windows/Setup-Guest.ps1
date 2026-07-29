@@ -16,7 +16,7 @@
     the host. From then on `du-updater` drives everything automatically.
 
 .NOTES
-    Downloads (WinFsp, WebView2) need working internet in the guest — the VM uses
+    Downloads (WinFsp, WebView2) need working internet in the guest - the VM uses
     an e1000e NIC so this works out of the box once Windows is at the desktop.
 #>
 [CmdletBinding()]
@@ -28,7 +28,7 @@ param(
     [string]$WinFspUrl   = "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi",
     [string]$WebView2Url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703",
     # Kiosk (default): replace explorer.exe with the boot script for the restricted
-    # user, so only the launcher shows — no desktop, no taskbar. -NoKiosk keeps the
+    # user, so only the launcher shows - no desktop, no taskbar. -NoKiosk keeps the
     # normal desktop and runs the boot script via a logon scheduled task instead.
     [switch]$NoKiosk
 )
@@ -92,7 +92,9 @@ function Set-AutoLogon {
 }
 
 function Install-WinFsp {
-    if (Test-Path "$env:ProgramFiles(x86)\WinFsp") { Log "WinFsp already installed"; return }
+    # Note: reference the "(x86)" path via literal text, not $env:ProgramFiles(x86)
+    # - a variable immediately followed by "(" is a PowerShell parse error.
+    if (Test-Path "$env:SystemDrive\Program Files (x86)\WinFsp") { Log "WinFsp already installed"; return }
     $msi = Join-Path $env:TEMP "winfsp.msi"
     Get-File -Url $WinFspUrl -OutFile $msi
     Log "Installing WinFsp"
@@ -114,7 +116,7 @@ function Enable-VirtioFs {
         Set-Service -Name VirtioFsSvc -StartupType Automatic
         Start-Service -Name VirtioFsSvc -ErrorAction SilentlyContinue
     } else {
-        Warn "VirtioFsSvc not found — the VirtIO-FS share won't mount. Ensure the guest tools installed viofs, and WinFsp is present."
+        Warn "VirtioFsSvc not found - the VirtIO-FS share won't mount. Ensure the guest tools installed viofs, and WinFsp is present."
     }
 }
 

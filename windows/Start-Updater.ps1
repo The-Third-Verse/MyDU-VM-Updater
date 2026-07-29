@@ -9,7 +9,7 @@
       3. installs MyDU from the official installer if requested / the launcher is
          missing, then
       4. launches the DU launcher and waits for it to close, and
-      5. shuts Windows down — always — so the VM powers off and du-updater exits.
+      5. shuts Windows down - always - so the VM powers off and du-updater exits.
 
     The whole run is wrapped so that ANY failure still shuts the VM down; the
     launcher window closing is the normal signal to power off.
@@ -47,7 +47,7 @@ function Stop-Guest {
     Start-Process shutdown.exe -ArgumentList "/s /t 0" -ErrorAction SilentlyContinue
 }
 
-# Find the drive whose root contains our control folder — robust to whatever
+# Find the drive whose root contains our control folder - robust to whatever
 # letter VirtioFsSvc assigns.
 function Find-ShareDrive {
     for ($i = 0; $i -lt $MountTimeoutSec; $i++) {
