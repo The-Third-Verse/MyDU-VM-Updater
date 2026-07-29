@@ -20,7 +20,9 @@ param(
     [string]$ControlDir      = ".du-updater",
     [string]$DefaultInstaller = "https://installer-prod.dualthegame.com/mydu/dual-installer.exe",
     [string]$DefaultLauncher  = "dual-launcher.exe",
-    [int]   $MountTimeoutSec = 120
+    [int]   $MountTimeoutSec = 120,
+    [int]   $Width           = 1280,
+    [int]   $Height          = 720
 )
 
 $ErrorActionPreference = "Stop"
@@ -89,6 +91,43 @@ function Install-MyDU {
         '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOCANCEL','/LANG=english',"/DIR=$dir","/LOG=$log"
 }
 
+# Set a usable screen resolution. In kiosk mode explorer.exe is gone, so the
+# SPICE agent's auto-resize doesn't run and the guest can be stuck at a tiny
+# default where the launcher window doesn't fit. Best-effort only.
+function Set-Resolution {
+    param([int]$W, [int]$H)
+    try {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class DU_Display {
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+    public struct DEVMODE {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string dmDeviceName;
+        public ushort dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra;
+        public uint dmFields;
+        public int dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;
+        public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string dmFormName;
+        public ushort dmLogPixels;
+        public uint dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+        public uint dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2;
+        public uint dmPanningWidth, dmPanningHeight;
+    }
+    [DllImport("user32.dll")] public static extern int EnumDisplaySettings(string dev, int mode, ref DEVMODE dm);
+    [DllImport("user32.dll")] public static extern int ChangeDisplaySettings(ref DEVMODE dm, int flags);
+}
+'@ -ErrorAction Stop
+        $dm = New-Object DU_Display+DEVMODE
+        if ([DU_Display]::EnumDisplaySettings($null, -1, [ref]$dm) -ne 0) {
+            $dm.dmPelsWidth = $W; $dm.dmPelsHeight = $H
+            $dm.dmFields = 0x80000 -bor 0x100000   # DM_PELSWIDTH | DM_PELSHEIGHT
+            [void][DU_Display]::ChangeDisplaySettings([ref]$dm, 0)
+            Log "Set resolution to ${W}x${H}"
+        }
+    } catch { Log "Resolution set skipped: $($_.Exception.Message)" }
+}
+
 # Locate the launcher anywhere under the share (the installer puts it in a
 # subfolder), returning its full path or $null.
 function Find-Launcher {
@@ -101,6 +140,7 @@ function Find-Launcher {
 # --------------------------------------------------------------------------- #
 try {
     Log "DU updater guest starting (tag '$ShareTag')."
+    Set-Resolution -W $Width -H $Height
 
     $script:Share = Find-ShareDrive
     if (-not $script:Share) { Log "Game share never mounted (VirtioFsSvc?). Aborting."; return }
