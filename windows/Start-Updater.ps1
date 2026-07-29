@@ -128,6 +128,22 @@ public class DU_Display {
     } catch { Log "Resolution set skipped: $($_.Exception.Message)" }
 }
 
+# Best-effort: maximize the launcher's window once it appears. Searches by process
+# name so it also catches a window owned by a child process. Only works if the
+# launcher's window is resizable/maximizable.
+function Maximize-LauncherWindow {
+    param([string]$Name)
+    try {
+        Add-Type -Namespace DU -Name Win -MemberDefinition `
+            '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);' -ErrorAction SilentlyContinue
+        for ($i = 0; $i -lt 40; $i++) {
+            $w = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.ProcessName -like "$Name*" } | Select-Object -First 1
+            if ($w) { [void][DU.Win]::ShowWindow($w.MainWindowHandle, 3); Log "Maximized launcher window"; return }  # 3 = SW_MAXIMIZE
+            Start-Sleep -Milliseconds 500
+        }
+    } catch { Log "Maximize skipped: $($_.Exception.Message)" }
+}
+
 # Locate the launcher anywhere under the share (the installer puts it in a
 # subfolder), returning its full path or $null.
 function Find-Launcher {
@@ -158,7 +174,8 @@ try {
 
     if ($launcher) {
         Log "Launching $launcher"
-        $p = Start-Process -FilePath $launcher -WorkingDirectory (Split-Path $launcher -Parent) -PassThru
+        $p = Start-Process -FilePath $launcher -WorkingDirectory (Split-Path $launcher -Parent) -PassThru -WindowStyle Maximized
+        Maximize-LauncherWindow -Name ([IO.Path]::GetFileNameWithoutExtension($launcher))
         $p.WaitForExit()
         Log "Launcher exited (code $($p.ExitCode))."
     } else {
