@@ -488,8 +488,15 @@ Download one from Microsoft:
     if virsh_ dominfo "$VM_NAME" >/dev/null 2>&1 && [ "$RECREATE" -eq 0 ]; then
         die "domain '$VM_NAME' already exists. Use --recreate to redefine it, or --finalize."
     fi
-    [ "$RECREATE" -eq 1 ] && virsh_ dominfo "$VM_NAME" >/dev/null 2>&1 \
-        && { virsh_ destroy "$VM_NAME" >/dev/null 2>&1 || true; }
+    if [ "$RECREATE" -eq 1 ] && virsh_ dominfo "$VM_NAME" >/dev/null 2>&1; then
+        info "Removing existing domain '$VM_NAME' (--recreate)"
+        virsh_ destroy "$VM_NAME" >/dev/null 2>&1 || true   # stop if running
+        # Undefine so `virsh define` doesn't collide on the old UUID. Extra flags
+        # clear nvram/snapshots/saved state; fall back if a flag isn't supported.
+        virsh_ undefine "$VM_NAME" --nvram --snapshots-metadata --managed-save >/dev/null 2>&1 \
+            || virsh_ undefine "$VM_NAME" --nvram >/dev/null 2>&1 \
+            || virsh_ undefine "$VM_NAME" >/dev/null 2>&1 || true
+    fi
 
     create_disk
     fetch_virtio_iso
