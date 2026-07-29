@@ -494,10 +494,9 @@ finalize() {
 
     cat <<EOF
 
-Done. To have du-updater restore this clean state before each run, set:
-
-    DU_CLEAN_SNAPSHOT=$SNAPSHOT_NAME
-    (or add CLEAN_SNAPSHOT="$SNAPSHOT_NAME" to $CONFIG_FILE)
+Done. du-updater restores this '$SNAPSHOT_NAME' snapshot before each run by
+default, so the VM stays disposable (only the game files on the share persist).
+Use 'du-updater --no-revert' to keep guest changes between runs.
 EOF
 }
 
