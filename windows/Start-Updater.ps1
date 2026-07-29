@@ -21,8 +21,8 @@ param(
     [string]$DefaultInstaller = "https://installer-prod.dualthegame.com/mydu/dual-installer.exe",
     [string]$DefaultLauncher  = "dual-launcher.exe",
     [int]   $MountTimeoutSec = 120,
-    [int]   $Width           = 1280,
-    [int]   $Height          = 720
+    [int]   $Width           = 1440,
+    [int]   $Height          = 900
 )
 
 $ErrorActionPreference = "Stop"
