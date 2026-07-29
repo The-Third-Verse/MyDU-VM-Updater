@@ -128,20 +128,55 @@ public class DU_Display {
     } catch { Log "Resolution set skipped: $($_.Exception.Message)" }
 }
 
-# Best-effort: maximize the launcher's window once it appears. Searches by process
-# name so it also catches a window owned by a child process. Only works if the
-# launcher's window is resizable/maximizable.
-function Maximize-LauncherWindow {
+# Best-effort window manager for the launcher: the DU launcher pops a "Low Memory"
+# dialog FIRST (so a naive maximize hits that popup), and that dialog also blocks a
+# hands-off run. So we enumerate the launcher's visible windows, auto-dismiss the
+# "Low Memory" popup (Enter = its default "Continue"/OK button), and maximize the
+# real main window.
+function Manage-LauncherWindow {
     param([string]$Name)
     try {
-        Add-Type -Namespace DU -Name Win -MemberDefinition `
-            '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);' -ErrorAction SilentlyContinue
-        for ($i = 0; $i -lt 40; $i++) {
-            $w = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.ProcessName -like "$Name*" } | Select-Object -First 1
-            if ($w) { [void][DU.Win]::ShowWindow($w.MainWindowHandle, 3); Log "Maximized launcher window"; return }  # 3 = SW_MAXIMIZE
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+        Add-Type -TypeDefinition @'
+using System; using System.Text; using System.Collections.Generic; using System.Runtime.InteropServices;
+public class DUWinMgr {
+    public delegate bool EnumProc(IntPtr h, IntPtr l);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr l);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+    public static List<IntPtr> WindowsOf(uint pid) {
+        var list = new List<IntPtr>();
+        EnumWindows((h,l)=>{ uint p; GetWindowThreadProcessId(h, out p); if(p==pid && IsWindowVisible(h)) list.Add(h); return true; }, IntPtr.Zero);
+        return list;
+    }
+    public static string Title(IntPtr h){ var sb=new StringBuilder(256); GetWindowText(h, sb, 256); return sb.ToString(); }
+}
+'@ -ErrorAction SilentlyContinue
+
+        $deadline = (Get-Date).AddSeconds(90)
+        $maxed = $false
+        while ((Get-Date) -lt $deadline -and -not $maxed) {
+            foreach ($p in @(Get-Process -Name $Name -ErrorAction SilentlyContinue)) {
+                foreach ($h in [DUWinMgr]::WindowsOf([uint32]$p.Id)) {
+                    $t = [DUWinMgr]::Title($h)
+                    if ($t -match '(?i)low memory') {
+                        [void][DUWinMgr]::SetForegroundWindow($h)
+                        Start-Sleep -Milliseconds 200
+                        [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+                        Log "Dismissed Low Memory dialog"
+                    } elseif ($t.Trim().Length -gt 0) {
+                        [void][DUWinMgr]::ShowWindow($h, 3)   # 3 = SW_MAXIMIZE
+                        Log "Maximized launcher window: $t"
+                        $maxed = $true
+                    }
+                }
+            }
             Start-Sleep -Milliseconds 500
         }
-    } catch { Log "Maximize skipped: $($_.Exception.Message)" }
+    } catch { Log "Window management skipped: $($_.Exception.Message)" }
 }
 
 # Locate the launcher anywhere under the share (the installer puts it in a
@@ -183,7 +218,7 @@ try {
     if ($launcher) {
         Log "Launching $launcher"
         $p = Start-Process -FilePath $launcher -WorkingDirectory (Split-Path $launcher -Parent) -PassThru -WindowStyle Maximized
-        Maximize-LauncherWindow -Name ([IO.Path]::GetFileNameWithoutExtension($launcher))
+        Manage-LauncherWindow -Name ([IO.Path]::GetFileNameWithoutExtension($launcher))
         $p.WaitForExit()
         Log "Launcher exited (code $($p.ExitCode))."
     } else {
