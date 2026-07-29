@@ -408,6 +408,22 @@ close_viewer() {
     VIEWER_PID=""
 }
 
+# Wait until the session ends: either the guest powers off (launcher closed), or
+# the user closes the viewer window. Either way we return and then stop the VM.
+wait_for_session_end() {
+    info "Waiting for the updater to finish (close the launcher, or the window, to end)..."
+    while :; do
+        case "$(virsh_ domstate "$VM_NAME" 2>/dev/null || echo unknown)" in
+            "shut off"|"crashed"|"unknown") return 0 ;;
+        esac
+        if [ -n "${VIEWER_PID:-}" ] && ! kill -0 "$VIEWER_PID" 2>/dev/null; then
+            info "Updater window closed; ending the session."
+            return 0
+        fi
+        sleep 3
+    done
+}
+
 # Best-effort clean stop if the VM is still running after the window closed.
 ensure_stopped() {
     local state
@@ -476,10 +492,10 @@ main() {
         wait_for_shutdown
     else
         open_viewer
-        wait_for_shutdown   # blocks until the guest powers off (session done)
-        close_viewer        # then close the SPICE window automatically
+        wait_for_session_end   # ends when the guest powers off OR the window closes
+        close_viewer
     fi
-    ensure_stopped
+    ensure_stopped   # shut the VM down if it's still running (e.g. window was closed)
 
     info "Done. Update session finished."
 }
