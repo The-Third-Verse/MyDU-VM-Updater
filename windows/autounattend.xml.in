@@ -118,7 +118,7 @@ ${DISK_CONFIG}
       <FirstLogonCommands>
         <SynchronousCommand wcm:action="add">
           <Order>1</Order>
-          <CommandLine>cmd /c for %i in (D E F G H I) do @if exist %i:\Setup-Guest.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File %i:\Setup-Guest.ps1</CommandLine>
+          <CommandLine>cmd /c for %i in (D E F G H I) do @if exist %i:\Setup-Guest.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File %i:\Setup-Guest.ps1 1>>C:\du-setup.log 2>&amp;1</CommandLine>
           <Description>Provision DU updater guest</Description>
         </SynchronousCommand>
         <SynchronousCommand wcm:action="add">
