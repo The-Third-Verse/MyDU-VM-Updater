@@ -78,13 +78,24 @@ function Install-MyDU {
     # Inno Setup silent install straight to the shared game folder, so first-time
     # setup needs no wizard. $ShareRoot is a drive root ("Z:\") with no spaces, so
     # /DIR is passed unquoted (a trailing "\" inside quotes would escape the quote).
-    $dir = $ShareRoot.TrimEnd('\') + '\'
+    # Inno rejects a bare drive root ("Z:\") as the install dir, so use a subfolder
+    # of the share. The launcher is found afterwards by recursive search.
+    $dir = Join-Path $ShareRoot 'DualUniverse'
     $log = Join-Path $ShareRoot "$ControlDir\mydu-install.log"
     Log "Installing MyDU silently to $dir"
     # /LANG avoids the "Select Setup Language" dialog, which Inno can still show in
     # silent mode with multiple languages. /LOG captures the install for diagnosis.
     Start-Process -FilePath $inst -Wait -ArgumentList `
         '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOCANCEL','/LANG=english',"/DIR=$dir","/LOG=$log"
+}
+
+# Locate the launcher anywhere under the share (the installer puts it in a
+# subfolder), returning its full path or $null.
+function Find-Launcher {
+    param([string]$Root, [string]$Exe)
+    $f = Get-ChildItem -Path $Root -Filter $Exe -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($f) { return $f.FullName }
+    return $null
 }
 
 # --------------------------------------------------------------------------- #
@@ -96,16 +107,18 @@ try {
     Log "Game share: $script:Share"
 
     $cfg      = Read-Command -Path (Join-Path $script:Share "$ControlDir\command")
-    $launcher = Join-Path $script:Share $cfg['LAUNCHER_EXE']
-    Log ("Command: ACTION={0} LAUNCHER_EXE={1}" -f $cfg['ACTION'], $cfg['LAUNCHER_EXE'])
+    $exe      = $cfg['LAUNCHER_EXE']
+    $launcher = Find-Launcher $script:Share $exe
+    Log ("Command: ACTION={0} LAUNCHER_EXE={1}" -f $cfg['ACTION'], $exe)
 
-    if ($cfg['ACTION'] -eq 'install' -or -not (Test-Path $launcher)) {
+    if ($cfg['ACTION'] -eq 'install' -or -not $launcher) {
         Install-MyDU -Url $cfg['INSTALLER_URL'] -ShareRoot $script:Share
+        $launcher = Find-Launcher $script:Share $exe
     }
 
-    if (Test-Path $launcher) {
+    if ($launcher) {
         Log "Launching $launcher"
-        $p = Start-Process -FilePath $launcher -WorkingDirectory $script:Share -PassThru
+        $p = Start-Process -FilePath $launcher -WorkingDirectory (Split-Path $launcher -Parent) -PassThru
         $p.WaitForExit()
         Log "Launcher exited (code $($p.ExitCode))."
     } else {

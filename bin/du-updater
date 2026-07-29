@@ -273,7 +273,9 @@ check_access() {
 # then write the command file the guest reads from the shared folder.
 plan_action() {
     local action
-    if [ -e "$GAME_DIR/$LAUNCHER_EXE" ]; then
+    # The installer puts the launcher in a subfolder of the game dir, so search
+    # recursively rather than only the root.
+    if find "$GAME_DIR" -name "$LAUNCHER_EXE" -type f -print -quit 2>/dev/null | grep -q .; then
         info "Found $LAUNCHER_EXE — the VM will start the launcher."
         action="run"
     else
