@@ -31,18 +31,21 @@
       <UserLocale>${LOCALE}</UserLocale>
     </component>
 
-    <component name="Microsoft-Windows-Setup" processorArchitecture="amd64"
+    <!-- Inject the VirtIO storage driver during setup. DriverPaths belongs to
+         PnpCustomizationsWinPE (NOT Setup). Drive letters vary in WinPE, so list
+         several candidates pointing at the VirtIO CD; missing ones are ignored. -->
+    <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-
-      <!-- Inject the VirtIO storage driver during setup. Drive letters vary in
-           WinPE, so list several candidates pointing at the VirtIO CD; Setup
-           ignores the ones that don't exist. -->
       <DriverPaths>
         <PathAndCredentials wcm:action="add" wcm:keyValue="1"><Path>D:\viostor\${WINPE_DRIVER_DIR}\amd64</Path></PathAndCredentials>
         <PathAndCredentials wcm:action="add" wcm:keyValue="2"><Path>E:\viostor\${WINPE_DRIVER_DIR}\amd64</Path></PathAndCredentials>
         <PathAndCredentials wcm:action="add" wcm:keyValue="3"><Path>F:\viostor\${WINPE_DRIVER_DIR}\amd64</Path></PathAndCredentials>
         <PathAndCredentials wcm:action="add" wcm:keyValue="4"><Path>G:\viostor\${WINPE_DRIVER_DIR}\amd64</Path></PathAndCredentials>
       </DriverPaths>
+    </component>
+
+    <component name="Microsoft-Windows-Setup" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
 
       <DiskConfiguration>
 ${DISK_CONFIG}
