@@ -30,7 +30,10 @@ param(
     # Kiosk (default): replace explorer.exe with the boot script for the restricted
     # user, so only the launcher shows - no desktop, no taskbar. -NoKiosk keeps the
     # normal desktop and runs the boot script via a logon scheduled task instead.
-    [switch]$NoKiosk
+    [switch]$NoKiosk,
+    # -DeepSlim adds the slow WinSxS /ResetBase + CompactOS steps (~3-4 GB more but
+    # 15-25 min). Off by default so provisioning stays fast.
+    [switch]$DeepSlim
 )
 
 $ErrorActionPreference = "Stop"
@@ -213,16 +216,18 @@ function Optimize-DiskSpace {
     Log "Slimming Windows (reclaiming disk space)..."
     # No hibernation file (~1.6 GB).
     cmd.exe /c "powercfg.exe /h off" 2>$null
-    # Reclaim the ~7 GB Windows Update reserved storage (we never update).
+    # Reclaim the ~7 GB Windows Update reserved storage (we never update). Fast.
     try { Dism.exe /Online /Set-ReservedStorageState /State:Disabled | Out-Null } catch {}
-    # Remove superseded component-store files (WinSxS).
-    try { Dism.exe /Online /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null } catch {}
-    # Clear Windows Update cache and installer temp files.
+    # Clear Windows Update cache and installer temp files. Fast.
     foreach ($p in "$env:WINDIR\SoftwareDistribution\Download\*", "$env:TEMP\*", "$env:WINDIR\Temp\*") {
         Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue
     }
-    # Compress OS binaries (CompactOS, ~2 GB). Slow but one-time.
-    try { compact.exe /CompactOS:always | Out-Null } catch {}
+    # Slow extras (~3-4 GB, 15-25 min) - only with -DeepSlim.
+    if ($DeepSlim) {
+        Log "  deep slim: WinSxS /ResetBase + CompactOS (slow)..."
+        try { Dism.exe /Online /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null } catch {}
+        try { compact.exe /CompactOS:always | Out-Null } catch {}
+    }
     # TRIM so the freed blocks are released back to the (discard='unmap') qcow2,
     # actually shrinking the disk image rather than just NTFS free space.
     try { Optimize-Volume -DriveLetter C -ReTrim -ErrorAction SilentlyContinue | Out-Null } catch {}
