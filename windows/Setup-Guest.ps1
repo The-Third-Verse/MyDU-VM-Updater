@@ -196,6 +196,24 @@ function Set-KioskShell {
     Set-ShellInHive -HivePath "$env:SystemDrive\Users\$UserName\NTUSER.DAT" -Shell $cmd
 }
 
+# Reclaim disk space Windows doesn't need for a launcher-only, disposable VM.
+# Runs before the snapshot so every build stays lean. Each step is best-effort.
+function Optimize-DiskSpace {
+    Log "Slimming Windows (reclaiming disk space)..."
+    # No hibernation file (~1.6 GB).
+    cmd.exe /c "powercfg.exe /h off" 2>$null
+    # Reclaim the ~7 GB Windows Update reserved storage (we never update).
+    try { Dism.exe /Online /Set-ReservedStorageState /State:Disabled | Out-Null } catch {}
+    # Remove superseded component-store files (WinSxS).
+    try { Dism.exe /Online /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null } catch {}
+    # Clear Windows Update cache and installer temp files.
+    foreach ($p in "$env:WINDIR\SoftwareDistribution\Download\*", "$env:TEMP\*", "$env:WINDIR\Temp\*") {
+        Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    # Compress OS binaries (CompactOS, ~2 GB). Slow but one-time.
+    try { compact.exe /CompactOS:always | Out-Null } catch {}
+}
+
 # --------------------------------------------------------------------------- #
 Assert-Admin
 Log "Provisioning Dual Universe updater guest"
@@ -212,6 +230,7 @@ Enable-VirtioFs
 Install-WebView2
 Deploy-BootScript
 if ($NoKiosk) { Install-BootTask } else { Set-KioskShell }
+Optimize-DiskSpace
 
 Write-Host ""
 Log "Guest provisioning complete."
