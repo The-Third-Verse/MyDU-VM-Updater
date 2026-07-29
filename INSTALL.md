@@ -1,83 +1,59 @@
 # Installation & First-Run Guide
 
-Step-by-step setup for the MyDU VM Updater: create the hidden Windows VM once,
-then use `du-updater` like any native Linux app.
+Set up the hidden Windows VM once, then use `du-updater` like any native Linux
+app — it boots the VM in the background, runs the official Dual Universe launcher
+to update the game into your Linux game folder, and shuts the VM down when you're
+done. You keep playing on the native Linux client.
 
-> 📹 A video walkthrough is available: _(link coming soon)_
+There are two ways to build the VM:
 
-**Flow at a glance**
+- **[Easy install](#easy-install-recommended)** — one command does everything,
+  fully hands-off. **Recommended.**
+- **[Manual install](#manual-install)** — you click through Windows Setup and run
+  the guest setup yourself. Use this if the unattended install doesn't fit your
+  ISO, or you want to see each step.
 
-```
-1. Install host dependencies        (once)
-2. Get an official Windows ISO       (you provide it)
-3. Create the VM                     scripts/create-vm.sh
-4. Install Windows                   ← Load the VirtIO disk driver here
-5. Set up the guest + finalize       scripts/create-vm.sh --finalize
-6. Everyday use                      du-updater
-```
+Both end at the same place: **[Everyday use](#everyday-use)**.
+
+> 📹 Video walkthrough: _(link coming soon)_
 
 ---
 
-## 1. Install host dependencies
+## Prerequisites (both paths)
 
-Install QEMU/KVM, libvirt, `virtiofsd`, `virt-viewer`, and the helper tools —
-see the [Dependencies](README.md#dependencies) section of the README for the
-one-line command for your distribution.
+### 1. Host dependencies
 
-Both scripts check dependencies at startup and print the exact install command
-for anything missing, so you can also just run them and follow the hints.
+Install QEMU/KVM, libvirt, `virtiofsd`, `virt-viewer`, and the helpers — see the
+[Dependencies](README.md#dependencies) section of the README for the one-line
+command for your distro. The scripts also check at startup and print the exact
+install command for anything missing.
 
 Make sure libvirt is running and your user can use it:
 
 ```bash
-systemctl enable --now libvirtd     # if not already running
+systemctl enable --now libvirtd
 ```
 
-## 2. Get an official Windows ISO
+### 2. Your own Windows ISO
 
-Download your **own** copy from Microsoft (this project never redistributes
+Download an official ISO from Microsoft (this project never redistributes
 Windows):
 
-- Windows 10 (recommended, lighter): <https://www.microsoft.com/en-us/software-download/windows10ISO>
-- Windows 11 (needs `--win11`, plus `swtpm` + OVMF): <https://www.microsoft.com/en-us/software-download/windows11>
+- **Windows 10** (recommended — lighter): <https://www.microsoft.com/en-us/software-download/windows10ISO>
+- **Windows 11** (add `--win11`, needs `swtpm` + OVMF): <https://www.microsoft.com/en-us/software-download/windows11>
 
-## 3. Create the VM
+---
 
-Point the script at your ISO and the Linux directory where the game is (or will
-be) installed. That directory is shared into the VM over VirtIO-FS.
+## Easy install (recommended)
 
-```bash
-scripts/create-vm.sh --win-iso ~/Downloads/Win10_x64.iso \
-                     --game-dir ~/Games/DualUniverse
-```
+One command builds the VM, installs Windows unattended, provisions the guest, and
+finalizes a clean baseline — no clicking, no VirtIO-driver step, no manual guest
+setup. It needs an ISO-authoring tool (`xorriso`, `genisoimage`, or `mkisofs`).
 
-For Windows 11 add `--win11` (UEFI + Secure Boot + TPM 2.0; defaults to 6 GB / 64 GB).
+### Step 1 — Run it
 
-By default the disk, ISOs and domain XML live under
-`~/.local/share/du-updater` (per Linux user). Put them elsewhere with
-`--data-dir /path` (or set `$XDG_DATA_HOME`).
-
-### Fast path: fully automatic install
-
-Add **`--unattended`** and the whole thing is hands-off — no clicking through
-Windows Setup, no manual VirtIO driver step, and the guest provisioning
-(`Setup-Guest.ps1`) runs by itself:
-
-```bash
-scripts/create-vm.sh --unattended \
-                     --win-iso ~/Downloads/Win10_x64.iso \
-                     --game-dir ~/Games/DualUniverse
-```
-
-It builds an `autounattend.xml` config CD, installs Windows, creates the
-restricted user, installs WinFsp/WebView2/guest tools, and powers the VM off when
-done. Wait for it to shut off, then jump to step 5 (finalize). Needs an ISO
-authoring tool (`xorriso`, `genisoimage`, or `mkisofs`). If you'd rather do it by
-hand, skip `--unattended` and follow step 4.
-
-Add **`--auto-finalize`** to make it completely turnkey — the command waits for
-the VM to power off after provisioning and finalizes it for you (so you can skip
-step 5 too):
+Point it at your ISO and the Linux folder where the game should live (this folder
+is shared into the VM and is where the game files end up):
 
 ```bash
 scripts/create-vm.sh --unattended --auto-finalize \
@@ -85,141 +61,173 @@ scripts/create-vm.sh --unattended --auto-finalize \
                      --game-dir ~/Games/DualUniverse
 ```
 
-This creates the qcow2 disk, downloads the VirtIO-win driver ISO, defines the
-libvirt domain, attaches the Windows and VirtIO ISOs as boot CDs, and starts the
-VM. Open the console:
+For Windows 11, add `--win11`. To store the VM disk/ISOs elsewhere, add
+`--data-dir /path` (default: `~/.local/share/du-updater`).
+
+### Step 2 — Wait
+
+The command runs unattended and **blocks until the VM finishes and powers off**,
+then finalizes automatically (ejects install media, takes the `clean` snapshot).
+Expect roughly 15–25 minutes. You can watch if you like:
 
 ```bash
 virt-viewer --connect qemu:///session --attach du-updater
 ```
 
-> On GNOME/Wayland a new window may open **behind** your terminal — press
-> **Super** and click the "Remote Viewer" window to bring it forward.
+> On GNOME/Wayland the window may open **behind** your terminal — press **Super**
+> and click the "Remote Viewer" window.
 
-## 4. Install Windows — loading the VirtIO disk driver
+What's happening on its own: Windows installs → a temporary admin auto-logs in →
+`Setup-Guest.ps1` runs (creates the runtime user, installs WinFsp + VirtIO guest
+tools + WebView2, sets auto-login + the kiosk shell, slims the disk) → the VM
+powers off. If anything goes wrong, it's logged to `C:\du-setup.log` in the guest.
 
-Windows Setup will reach **"Where do you want to install Windows?"** showing an
-empty list and:
+### Step 3 — Use it
 
-> We couldn't find any drives. To get a storage driver, click Load driver.
+When the command returns, you're done building. Go to
+**[Everyday use](#everyday-use)**.
 
-This is expected — the VM's disk is VirtIO, and Windows has no built-in driver.
-Load it from the VirtIO CD:
+---
 
-1. Click **Load driver** → **Browse**.
-2. Select the CD-ROM that contains folders like `NetKVM`, `viostor`, `vioscsi`,
-   `Balloon` — that is the **virtio-win** CD (the other CD is your Windows ISO).
-3. Open **`viostor` → `w10` → `amd64`** and click **OK**.
-   *(For Windows 11 use `w11`. If the disk still doesn't appear, repeat with
-   `vioscsi\w10\amd64`.)*
-4. Select **"Red Hat VirtIO SCSI controller"** → **Next**.
-   *(If the list looks empty, untick "Hide drivers that aren't compatible…".)*
-5. Your **32 GB disk** now appears → select it → **Next** to install.
+## Manual install
 
-Windows copies files and reboots a few times inside the VM until it reaches the
-desktop.
+Same result, but you drive Windows Setup and the guest provisioning yourself.
 
-At the OOBE **"Let's connect you to a network"** step, choose **"I don't have
-internet" → "Continue with limited setup"** and create a **local account** — this
-is the restricted user the updater uses. Networking comes up automatically on the
-next full boot (the NIC is emulated **e1000e**, which Windows drives out of the
-box; SLIRP provides NAT internet, IP `10.0.2.15`, gateway `10.0.2.2`).
+### Step 1 — Create the VM and boot the installer
 
-## 5. Set up the guest, then finalize
+```bash
+scripts/create-vm.sh --win-iso ~/Downloads/Win10_x64.iso \
+                     --game-dir ~/Games/DualUniverse
+```
 
-Inside Windows, run the guest setup (auto-login restricted user, WebView2, the
-Dual Universe installer/launcher, auto-start and auto-shutdown).
+(Add `--win11` for Windows 11; `--data-dir /path` to relocate the files.)
 
-> ⚠️ The Windows guest setup scripts are still in development. This section will
-> be expanded once they land.
+This creates the disk, downloads the VirtIO driver ISO, defines the domain,
+attaches the Windows ISO + VirtIO CD + a small **DUCFG scripts CD**, and starts
+the VM. Open the console:
 
-When the guest is ready, shut the VM down and finalize the host side — this ejects
-the install media and snapshots a clean baseline:
+```bash
+virt-viewer --connect qemu:///session --attach du-updater
+```
+
+### Step 2 — Install Windows (load the VirtIO disk driver)
+
+Windows Setup reaches **"Where do you want to install Windows?"** with an empty
+list and *"We couldn't find any drives."* — expected, because the disk is VirtIO.
+Load the driver:
+
+1. **Load driver** → **Browse**.
+2. Pick the CD with `NetKVM`, `viostor`, `vioscsi`, `Balloon` folders (the
+   **virtio-win** CD).
+3. Open **`viostor` → `w10` → `amd64`** → **OK**. *(Windows 11: `w11`. If the disk
+   still doesn't show, try `vioscsi\w10\amd64`.)*
+4. Select **"Red Hat VirtIO SCSI controller"** → **Next**. *(If the list is empty,
+   untick "Hide drivers that aren't compatible…".)*
+5. The disk now appears → select it → **Next**.
+
+Windows copies files and reboots a few times. At OOBE **"Let's connect you to a
+network"**, choose **"I don't have internet" → "Continue with limited setup"** and
+create any local account (it's temporary — the guest setup creates the real one).
+
+### Step 3 — Run the guest setup
+
+At the Windows desktop, open **PowerShell as Administrator** and run
+`Setup-Guest.ps1` from the **DUCFG** CD (the drive that contains it):
+
+```powershell
+$cd = (Get-PSDrive -PSProvider FileSystem | ? { Test-Path "$($_.Root)Setup-Guest.ps1" }).Root
+Set-ExecutionPolicy -Scope Process Bypass -Force
+& "${cd}Setup-Guest.ps1"
+```
+
+It creates the `duupdater` runtime user, enables auto-login, installs WinFsp +
+VirtIO guest tools + WebView2, sets the kiosk shell, slims the disk, and prints
+**"Guest provisioning complete."** (The VirtIO guest-tools installer may flash a
+window — let it finish.)
+
+### Step 4 — Shut down and finalize
+
+Shut Windows down (Start → Power → Shut down), then on the host:
 
 ```bash
 scripts/create-vm.sh --finalize
 ```
 
-## 6. Everyday use
+This ejects the install media and snapshots the `clean` baseline. Go to
+**[Everyday use](#everyday-use)**.
 
-The first time, tell `du-updater` where the game lives (it remembers it after):
+---
+
+## Everyday use
+
+The first time, tell `du-updater` where the game lives (it remembers afterwards):
 
 ```bash
 du-updater --game-dir ~/Games/DualUniverse
 ```
 
-After that, just run:
+After that, just:
 
 ```bash
 du-updater
 ```
 
-It boots the hidden VM, shows only the launcher, updates the shared game folder,
-and shuts everything down when you close the launcher. If `dual-launcher.exe`
-isn't in the game folder yet, it offers to install MyDU from the official
-installer first.
+It reverts the VM to the clean snapshot, boots it hidden, and the kiosk shell runs
+the launcher — no Windows desktop is ever shown. When you close the launcher, the
+VM powers off and `du-updater` exits.
+
+- **First run** installs MyDU: it silently installs the launcher to the shared
+  drive (`…\DualUniverse`) and starts it. The launcher then downloads the game
+  **into your Linux game folder** (`~/Games/DualUniverse/DualUniverse`).
+- **Later runs** find the launcher and just start it to update.
+
+By default the VM is disposable — it reverts to the `clean` snapshot each run, so
+the Windows side stays pristine and only the game files (on the Linux share)
+persist. Opt out per run with `--no-revert`.
 
 ---
 
 ## Guest accounts & keyboard
 
-Default accounts created during setup:
-
 | Account | Password | Role |
 |---------|----------|------|
-| `duupdater` | `DualUniverse!1` | restricted runtime user (auto-login, runs the launcher) |
-| `provision` | `Provision!1` | temporary admin used only during the unattended install |
+| `duupdater` | `DualUniverse!1` | runtime user (auto-login, runs the launcher) |
+| `provision` | `Provision!1` | temporary admin used during the unattended install |
 
-The guest keyboard layout is **US (QWERTY)** — the unattended install uses the
-`en-US` locale (change it with `create-vm.sh --locale`). If your physical keyboard
-is AZERTY or another layout, type the passwords **as if on a US keyboard** (e.g.
-`!` is Shift+1, `1` is the top-row 1, not the AZERTY-shifted key).
+The guest keyboard layout is **US (QWERTY)** (`en-US`; change with
+`create-vm.sh --locale`). On a physical AZERTY keyboard, type the passwords **as if
+on a US keyboard** (`!` is Shift+1, `1` is the top-row digit).
 
-Change the defaults via `create-vm.sh` (`--locale`, edition key) and the
-`Setup-Guest.ps1` parameters (`-UserName`, `-Password`).
+Change defaults via `create-vm.sh` (`--locale`, `--product-key`) and
+`Setup-Guest.ps1` (`-UserName`, `-Password`).
+
+---
 
 ## Troubleshooting
 
-**"Dual Universe - Low Memory" dialog on launch (normal — click Continue)**
-The DU launcher checks whether the machine can *play* the game and warns:
+**"Dual Universe - Low Memory" dialog on launch — normal, click Continue.**
+The launcher checks whether the machine can *play* the game and warns about RAM /
+video RAM. The VM only *updates* the game (you play on Linux), so this is harmless —
+click **Continue**.
 
-> Your computer have only 4095 MB of RAM.
-> Your computer have only 0 MB of Video RAM.
-> This may result in unexpected behaviors with the game and possible crashes. Continue?
+**Windows Setup shows no disk.** You skipped the VirtIO driver — see manual
+step 2 (Load driver → `viostor\w10\amd64`).
 
-This is **expected and harmless**. The VM only *updates* the game — you play on the
-native Linux client, not inside the VM — so its modest RAM and lack of dedicated
-video memory don't matter. Click **Continue** (OK) and the update proceeds normally.
+**`error: Unable to find a satisfying virtiofsd`.** Install the `virtiofsd`
+package (see Dependencies), then retry.
 
+**`error: domain 'du-updater' already exists`.** It's already built — just run
+`du-updater`. To rebuild from scratch, add `--recreate` to `create-vm.sh`.
 
-**`error: unsupported configuration: Unable to find a satisfying virtiofsd`**
-The VirtIO-FS daemon isn't installed. Install the `virtiofsd` package (see
-Dependencies), then start the VM again.
+**The console window won't come to the front (Wayland/GNOME).** Wayland won't let
+apps raise their own windows — press **Super** and click it.
 
-**`error: domain 'du-updater' already exists`**
-The VM is already defined — you don't need to create it again. Just start it:
+**No internet in the guest.** The NIC is emulated **e1000e** with SLIRP NAT
+(works with no driver). A NIC change only applies after a **full power-off**.
+Check the host has a backend: `ldconfig -p | grep libslirp`.
 
-```bash
-virsh --connect qemu:///session start du-updater
-virt-viewer --connect qemu:///session --attach du-updater
-```
+**Provisioning didn't run (unattended).** Log in as `provision` / `Provision!1`
+and read `C:\du-setup.log` — it captures the guest setup, including any error.
 
-To rebuild from scratch instead, add `--recreate` to `create-vm.sh`.
-
-**The console window won't come to the front (Wayland/GNOME)**
-Wayland doesn't let apps raise their own windows. Press **Super** and click the
-window, or find it in the dock.
-
-**Windows Setup shows no disk**
-You skipped the VirtIO driver — see step 4 (Load driver → `viostor\w10\amd64`).
-
-**No internet in the guest**
-The VM uses an emulated **e1000e** NIC with SLIRP NAT, which works in Windows with
-no extra driver. If you changed the NIC to `virtio`, install **NetKVM** from the
-VirtIO CD (`NetKVM\w10\amd64`). Note a NIC-model change only takes effect after a
-**full power-off** of the VM (a guest reboot is not enough). Check the host has a
-user-net backend: `ldconfig -p | grep libslirp`.
-
-**Missing dependencies**
-Run the script; it lists everything missing at once with the install command for
-your distribution.
+**Missing dependencies.** Run the script; it lists everything missing at once with
+the install command for your distro.
