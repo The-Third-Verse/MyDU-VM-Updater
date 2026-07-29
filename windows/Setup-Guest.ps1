@@ -79,7 +79,7 @@ function New-RestrictedUser {
     }
     # The MyDU installer requires elevation, so the runtime user must be an
     # administrator; combined with Set-SilentElevation this avoids UAC prompts
-    # in the hidden appliance. (Disposable, isolated VM — acceptable trade-off.)
+    # in the hidden appliance. (Disposable, isolated VM - acceptable trade-off.)
     Add-LocalGroupMember -Group "Administrators" -Member $UserName -ErrorAction SilentlyContinue
 }
 
