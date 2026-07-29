@@ -406,6 +406,16 @@ attach_install_media_and_start() {
     info "Starting VM"
     virsh_ start "$VM_NAME" >/dev/null
 
+    if [ "$UNATTENDED" -eq 1 ]; then
+        # First boot only: press a key past the firmware "Press any key to boot
+        # from CD or DVD" prompt (the disk is empty, so it won't fall through).
+        # Needed for UEFI/Windows 11; harmless otherwise. Background, ~24s.
+        ( for _ in $(seq 1 12); do
+            virsh_ send-key "$VM_NAME" --codeset linux KEY_ENTER >/dev/null 2>&1 || true
+            sleep 2
+          done ) &
+    fi
+
     local finalize_note
     if [ "$AUTO_FINALIZE" -eq 1 ]; then
         finalize_note="--auto-finalize is on: this command will wait for the VM to
