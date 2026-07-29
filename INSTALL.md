@@ -161,6 +161,23 @@ installer first.
 
 ---
 
+## Guest accounts & keyboard
+
+Default accounts created during setup:
+
+| Account | Password | Role |
+|---------|----------|------|
+| `duupdater` | `DualUniverse!1` | restricted runtime user (auto-login, runs the launcher) |
+| `provision` | `Provision!1` | temporary admin used only during the unattended install |
+
+The guest keyboard layout is **US (QWERTY)** — the unattended install uses the
+`en-US` locale (change it with `create-vm.sh --locale`). If your physical keyboard
+is AZERTY or another layout, type the passwords **as if on a US keyboard** (e.g.
+`!` is Shift+1, `1` is the top-row 1, not the AZERTY-shifted key).
+
+Change the defaults via `create-vm.sh` (`--locale`, edition key) and the
+`Setup-Guest.ps1` parameters (`-UserName`, `-Password`).
+
 ## Troubleshooting
 
 **`error: unsupported configuration: Unable to find a satisfying virtiofsd`**
