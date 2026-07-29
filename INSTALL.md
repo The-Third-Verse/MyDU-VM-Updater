@@ -21,7 +21,28 @@ Both end at the same place: **[Everyday use](#everyday-use)**.
 
 ## Prerequisites (both paths)
 
-### 1. Host dependencies
+### 1. Get the code
+
+Clone the repository and work from inside it — every command below is run from the
+repo root:
+
+```bash
+git clone https://github.com/The-Third-Verse/MyDU-VM-Updater.git
+cd MyDU-VM-Updater
+```
+
+The launcher is `bin/du-updater` and the VM tooling is `scripts/create-vm.sh`.
+To run `du-updater` from anywhere (recommended), symlink it onto your `PATH`:
+
+```bash
+mkdir -p ~/.local/bin
+ln -s "$PWD/bin/du-updater" ~/.local/bin/du-updater
+# make sure ~/.local/bin is on your PATH (most distros add it automatically)
+```
+
+If you skip that, just call it as `bin/du-updater` from the repo directory.
+
+### 2. Host dependencies
 
 Install QEMU/KVM, libvirt, `virtiofsd`, `virt-viewer`, and the helpers — see the
 [Dependencies](README.md#dependencies) section of the README for the one-line
@@ -34,7 +55,7 @@ Make sure libvirt is running and your user can use it:
 systemctl enable --now libvirtd
 ```
 
-### 2. Your own Windows ISO
+### 3. Your own Windows ISO
 
 Download an official ISO from Microsoft (this project never redistributes
 Windows):
@@ -159,6 +180,9 @@ This ejects the install media and snapshots the `clean` baseline. Go to
 ---
 
 ## Everyday use
+
+> These use `du-updater` (the `PATH` symlink from step 1). Without the symlink,
+> run `bin/du-updater` from the repo directory instead.
 
 The first time, tell `du-updater` where the game lives (it remembers afterwards):
 
