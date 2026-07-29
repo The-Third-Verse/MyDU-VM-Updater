@@ -52,6 +52,18 @@ you can point MyDU at the **shared game drive** (the one containing a
 `\.du-updater` folder). After that the launcher lives in the share and every
 later run is fully automatic (`ACTION=run`).
 
+## Kiosk mode (no Windows desktop)
+
+By default `Setup-Guest.ps1` runs in **kiosk mode**: it replaces `explorer.exe`
+with the boot script for the restricted user (via the per-user `Winlogon\Shell`
+override in that user's / the Default profile hive). At login Windows launches
+only `Start-Updater.ps1` — no desktop, no taskbar — which runs the launcher (or
+the installer if MyDU isn't installed) and shuts the VM down when it closes.
+
+- Other accounts (e.g. a debugging admin) keep the normal desktop.
+- Pass `-NoKiosk` to keep the desktop and run the boot script via a logon
+  scheduled task instead.
+
 ## Assumptions / tuning points
 
 - **VirtIO-FS needs WinFsp + viofs.** `Setup-Guest.ps1` installs WinFsp from the

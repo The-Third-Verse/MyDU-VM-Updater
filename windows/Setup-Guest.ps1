@@ -26,7 +26,11 @@ param(
     [string]$ShareTag    = "dushare",
     [string]$InstallDir  = "$env:ProgramData\du-updater",
     [string]$WinFspUrl   = "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi",
-    [string]$WebView2Url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+    [string]$WebView2Url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703",
+    # Kiosk (default): replace explorer.exe with the boot script for the restricted
+    # user, so only the launcher shows — no desktop, no taskbar. -NoKiosk keeps the
+    # normal desktop and runs the boot script via a logon scheduled task instead.
+    [switch]$NoKiosk
 )
 
 $ErrorActionPreference = "Stop"
@@ -124,13 +128,22 @@ function Install-WebView2 {
     Start-Process $exe -ArgumentList "/silent /install" -Wait
 }
 
-function Install-BootTask {
+function Deploy-BootScript {
     Log "Installing boot script to $InstallDir"
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    $boot = Join-Path $InstallDir 'Start-Updater.ps1'
-    Copy-Item (Join-Path $PSScriptRoot 'Start-Updater.ps1') $boot -Force
+    Copy-Item (Join-Path $PSScriptRoot 'Start-Updater.ps1') (Join-Path $InstallDir 'Start-Updater.ps1') -Force
+}
 
+# The command Windows runs as the shell / logon task.
+function Get-BootCommand {
+    $boot = Join-Path $InstallDir 'Start-Updater.ps1'
+    return 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $boot + '" -ShareTag "' + $ShareTag + '"'
+}
+
+# Non-kiosk mode: run the boot script at logon while keeping the normal desktop.
+function Install-BootTask {
     Log "Registering logon task 'DU-Updater' for '$UserName'"
+    $boot      = Join-Path $InstallDir 'Start-Updater.ps1'
     $arg       = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$boot`" -ShareTag `"$ShareTag`""
     $action    = New-ScheduledTaskAction    -Execute 'powershell.exe' -Argument $arg
     $trigger   = New-ScheduledTaskTrigger   -AtLogOn -User $UserName
@@ -138,6 +151,34 @@ function Install-BootTask {
     $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
     Register-ScheduledTask -TaskName 'DU-Updater' -Action $action -Trigger $trigger `
         -Principal $principal -Settings $settings -Force | Out-Null
+}
+
+# Write the per-user shell override into an offline user hive.
+function Set-ShellInHive {
+    param([string]$HivePath, [string]$Shell)
+    if (-not (Test-Path $HivePath)) { return }
+    $tag = "DUKiosk"
+    $sub = "Software\Microsoft\Windows NT\CurrentVersion\Winlogon"
+    try {
+        reg load "HKU\$tag" "$HivePath" | Out-Null
+        $key = "Registry::HKEY_USERS\$tag\$sub"
+        New-Item -Path $key -Force | Out-Null
+        New-ItemProperty -Path $key -Name Shell -Value $Shell -PropertyType String -Force | Out-Null
+    } finally {
+        [gc]::Collect(); Start-Sleep -Milliseconds 200
+        reg unload "HKU\$tag" | Out-Null
+    }
+}
+
+# Kiosk mode: replace explorer.exe with the boot script for the restricted user.
+# Applied to the Default profile (so the restricted user's future profile inherits
+# it) and to that user's hive if it already exists. Other accounts (e.g. an admin
+# for debugging) keep the normal desktop.
+function Set-KioskShell {
+    Log "Enabling kiosk shell for '$UserName' (no desktop; launcher only)"
+    $cmd = Get-BootCommand
+    Set-ShellInHive -HivePath "$env:SystemDrive\Users\Default\NTUSER.DAT" -Shell $cmd
+    Set-ShellInHive -HivePath "$env:SystemDrive\Users\$UserName\NTUSER.DAT" -Shell $cmd
 }
 
 # --------------------------------------------------------------------------- #
@@ -153,7 +194,8 @@ Install-WinFsp
 Install-VirtioGuestTools -VirtioDrive $virtio
 Enable-VirtioFs
 Install-WebView2
-Install-BootTask
+Deploy-BootScript
+if ($NoKiosk) { Install-BootTask } else { Set-KioskShell }
 
 Write-Host ""
 Log "Guest provisioning complete."
