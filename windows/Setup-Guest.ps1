@@ -212,6 +212,9 @@ function Optimize-DiskSpace {
     }
     # Compress OS binaries (CompactOS, ~2 GB). Slow but one-time.
     try { compact.exe /CompactOS:always | Out-Null } catch {}
+    # TRIM so the freed blocks are released back to the (discard='unmap') qcow2,
+    # actually shrinking the disk image rather than just NTFS free space.
+    try { Optimize-Volume -DriveLetter C -ReTrim -ErrorAction SilentlyContinue | Out-Null } catch {}
 }
 
 # --------------------------------------------------------------------------- #
