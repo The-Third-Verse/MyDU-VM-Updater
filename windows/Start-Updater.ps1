@@ -79,9 +79,12 @@ function Install-MyDU {
     # setup needs no wizard. $ShareRoot is a drive root ("Z:\") with no spaces, so
     # /DIR is passed unquoted (a trailing "\" inside quotes would escape the quote).
     $dir = $ShareRoot.TrimEnd('\') + '\'
+    $log = Join-Path $ShareRoot "$ControlDir\mydu-install.log"
     Log "Installing MyDU silently to $dir"
+    # /LANG avoids the "Select Setup Language" dialog, which Inno can still show in
+    # silent mode with multiple languages. /LOG captures the install for diagnosis.
     Start-Process -FilePath $inst -Wait -ArgumentList `
-        '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOCANCEL',"/DIR=$dir"
+        '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOCANCEL','/LANG=english',"/DIR=$dir","/LOG=$log"
 }
 
 # --------------------------------------------------------------------------- #
