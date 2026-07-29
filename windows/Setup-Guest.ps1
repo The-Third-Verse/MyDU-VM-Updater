@@ -196,6 +196,17 @@ function Set-KioskShell {
     Set-ShellInHive -HivePath "$env:SystemDrive\Users\$UserName\NTUSER.DAT" -Shell $cmd
 }
 
+# Disable services this launcher-only VM never needs, for a faster boot and less
+# background CPU. Safe on a disposable, isolated guest.
+function Disable-Services {
+    Log "Disabling unnecessary services (faster boot)..."
+    $svcs = 'SysMain','WSearch','wuauserv','DiagTrack','dmwappushservice','Spooler','WerSvc','MapsBroker'
+    foreach ($s in $svcs) {
+        Stop-Service -Name $s -Force -ErrorAction SilentlyContinue
+        Set-Service  -Name $s -StartupType Disabled -ErrorAction SilentlyContinue
+    }
+}
+
 # Reclaim disk space Windows doesn't need for a launcher-only, disposable VM.
 # Runs before the snapshot so every build stays lean. Each step is best-effort.
 function Optimize-DiskSpace {
@@ -233,6 +244,7 @@ Enable-VirtioFs
 Install-WebView2
 Deploy-BootScript
 if ($NoKiosk) { Install-BootTask } else { Set-KioskShell }
+Disable-Services
 Optimize-DiskSpace
 
 Write-Host ""
