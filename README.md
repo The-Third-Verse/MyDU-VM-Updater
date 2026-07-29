@@ -38,8 +38,8 @@ Command references: **[`create-vm`](docs/create-vm.md)** (build/finalize the VM)
 
 - A Linux host with QEMU + KVM and libvirt
 - An **official Windows ISO that you provide yourself**, downloaded from Microsoft:
-  - Windows 10: <https://www.microsoft.com/en-us/software-download/windows10ISO>
-  - Windows 11: <https://www.microsoft.com/en-us/software-download/windows11> (use `create-vm --win11`; also needs `swtpm` + OVMF for TPM 2.0 / Secure Boot)
+  - Windows 10 — recommended (lighter): <https://www.microsoft.com/en-us/software-download/windows10ISO>
+  - Windows 11 — supported: `create-vm --win11` adds a dedicated NTFS game disk (the DU updater needs a real NTFS volume, which the VirtIO-FS share isn't) and needs `swtpm` + OVMF: <https://www.microsoft.com/en-us/software-download/windows11>
 - Suggested VM sizing: 2 vCPU, 4 GB RAM, 32 GB dynamic qcow2 disk (Windows 11 defaults to 6 GB / 64 GB)
 
 ## Dependencies

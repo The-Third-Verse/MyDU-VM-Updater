@@ -84,7 +84,7 @@ ${SMM_FEATURE}  </features>
       <target dev='vda' bus='virtio'/>
       <boot order='3'/>
     </disk>
-
+${GAME_DISK}
     <controller type='usb' model='qemu-xhci' ports='15'/>
     <controller type='virtio-serial'/>
 

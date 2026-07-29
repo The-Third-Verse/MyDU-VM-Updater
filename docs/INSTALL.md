@@ -58,8 +58,11 @@ systemctl enable --now libvirtd
 Download an official ISO from Microsoft (this project never redistributes
 Windows):
 
-- **Windows 10** (recommended — lighter): <https://www.microsoft.com/en-us/software-download/windows10ISO>
-- **Windows 11** (add `--win11`, needs `swtpm` + OVMF): <https://www.microsoft.com/en-us/software-download/windows11>
+- **Windows 10** — recommended (lighter): <https://www.microsoft.com/en-us/software-download/windows10ISO>
+- **Windows 11** — supported. Because the DU updater needs a real NTFS volume (the
+  VirtIO-FS share isn't one), `--win11` adds a **dedicated NTFS game disk**; the game
+  installs there and is mirrored to the share for Linux. Needs `--win11` + `swtpm` +
+  OVMF: <https://www.microsoft.com/en-us/software-download/windows11>
 
 ---
 
@@ -229,6 +232,12 @@ Change defaults via `create-vm` (`--locale`, `--product-key`) and
 ---
 
 ## Troubleshooting
+
+**The game update fails on Windows 11** (`out.txt`: *"The volume does not contain a
+recognized file system"*). The DU updater needs a real NTFS volume and can't update
+on the VirtIO-FS share (works on Windows 10). This is handled automatically by
+`create-vm --win11`, which adds a dedicated NTFS game disk. If you hit this, you
+built the VM without `--win11` — rebuild with it.
 
 **"Dual Universe - Low Memory" dialog on launch — normal, click Continue.**
 The launcher checks whether the machine can *play* the game and warns about RAM /

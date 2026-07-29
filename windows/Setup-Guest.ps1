@@ -98,6 +98,26 @@ function Set-SilentElevation {
     Set-ItemProperty $sys PromptOnSecureDesktop 0
 }
 
+# Windows 11 attaches a second disk for the game, because the DU updater needs a
+# real NTFS volume (it fails on the VirtIO-FS share). Initialize + format it NTFS,
+# labelled DUGAME, and give it a drive letter. No-op on Windows 10 (no extra disk),
+# so Win10 is unchanged. Start-Updater finds it by the DUGAME label.
+function Initialize-GameDisk {
+    $disk = Get-Disk -ErrorAction SilentlyContinue |
+            Where-Object { $_.Number -ne 0 -and ($_.PartitionStyle -eq 'RAW' -or $_.NumberOfPartitions -eq 0) } |
+            Select-Object -First 1
+    if (-not $disk) { return }
+    Log "Initializing NTFS game disk (disk $($disk.Number))"
+    try {
+        if ($disk.PartitionStyle -eq 'RAW') {
+            Initialize-Disk -Number $disk.Number -PartitionStyle GPT -Confirm:$false -ErrorAction Stop
+        }
+        $part = New-Partition -DiskNumber $disk.Number -UseMaximumSize -AssignDriveLetter -ErrorAction Stop
+        Format-Volume -DriveLetter $part.DriveLetter -FileSystem NTFS -NewFileSystemLabel 'DUGAME' -Confirm:$false | Out-Null
+        Log "Game disk ready at $($part.DriveLetter):"
+    } catch { Warn "game disk init failed: $($_.Exception.Message)" }
+}
+
 function Set-AutoLogon {
     Log "Enabling auto-login for '$UserName'"
     $win = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
@@ -256,6 +276,7 @@ Set-AutoLogon
 Install-WinFsp
 Install-VirtioGuestTools -VirtioDrive $virtio
 Enable-VirtioFs
+Initialize-GameDisk
 Install-WebView2
 Install-VCRedist
 Deploy-BootScript

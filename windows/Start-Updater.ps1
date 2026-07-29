@@ -38,6 +38,7 @@ function Log {
 
 # Flush the run log to the share so the Linux side can read it, then power off.
 function Stop-Guest {
+    Log "Shutting down."
     if ($script:Share) {
         try {
             $dir = Join-Path $script:Share $ControlDir
@@ -45,7 +46,6 @@ function Stop-Guest {
             $script:LogLines | Set-Content -Path (Join-Path $dir 'guest.log') -ErrorAction SilentlyContinue
         } catch { }
     }
-    Log "Shutting down."
     Start-Process shutdown.exe -ArgumentList "/s /t 0" -ErrorAction SilentlyContinue
 }
 
@@ -71,22 +71,37 @@ function Read-Command {
     return $cfg
 }
 
+# The DUGAME NTFS disk (Windows 11), or $null (Windows 10 uses the share directly).
+function Find-GameDisk {
+    $v = Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.FileSystemLabel -eq 'DUGAME' -and $_.DriveLetter } | Select-Object -First 1
+    if ($v) { return ($v.DriveLetter + ':\') }
+    return $null
+}
+
+# Windows 11: mirror the game from the NTFS disk to the VirtIO-FS share so the
+# files land on Linux (where they play), the same place Windows 10 puts them.
+function Mirror-ToShare {
+    param([string]$GameRoot, [string]$ShareRoot)
+    $src = Join-Path $GameRoot 'DualUniverse'
+    $dst = Join-Path $ShareRoot 'DualUniverse'
+    if (-not (Test-Path $src)) { return }
+    Log "Mirroring game to the share for Linux: $src -> $dst"
+    robocopy $src $dst /MIR /NFL /NDL /NP /R:1 /W:1 | Out-Null   # robocopy exit 0-7 = success
+    Log "Mirror complete."
+}
+
 function Install-MyDU {
-    param([string]$Url, [string]$ShareRoot)
+    param([string]$Url, [string]$Root)
     $inst = Join-Path $env:TEMP 'dual-installer.exe'
     Log "Downloading MyDU installer: $Url"
     try   { Start-BitsTransfer -Source $Url -Destination $inst -ErrorAction Stop }
     catch { Invoke-WebRequest -Uri $Url -OutFile $inst -UseBasicParsing }
-    # Inno Setup silent install straight to the shared game folder, so first-time
-    # setup needs no wizard. $ShareRoot is a drive root ("Z:\") with no spaces, so
-    # /DIR is passed unquoted (a trailing "\" inside quotes would escape the quote).
-    # Inno rejects a bare drive root ("Z:\") as the install dir, so use a subfolder
-    # of the share. The launcher is found afterwards by recursive search.
-    $dir = Join-Path $ShareRoot 'DualUniverse'
-    $log = Join-Path $ShareRoot "$ControlDir\mydu-install.log"
+    # Inno Setup silent install. Inno rejects a bare drive root, so use a subfolder;
+    # the launcher is found afterwards by recursive search. The install log always
+    # goes to the share's control folder (readable from Linux).
+    $dir = Join-Path $Root 'DualUniverse'
+    $log = Join-Path $script:Share "$ControlDir\mydu-install.log"
     Log "Installing MyDU silently to $dir"
-    # /LANG avoids the "Select Setup Language" dialog, which Inno can still show in
-    # silent mode with multiple languages. /LOG captures the install for diagnosis.
     Start-Process -FilePath $inst -Wait -ArgumentList `
         '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOCANCEL','/LANG=english',"/DIR=$dir","/LOG=$log"
 }
@@ -188,6 +203,37 @@ function Find-Launcher {
     return $null
 }
 
+# Wait until the launcher session is genuinely over. We can't just wait on the one
+# process we started: the DU launcher spawns a SEPARATE update daemon (same exe name)
+# that downloads/extracts the game, and its UI process can exit early and relaunch
+# under a watchdog (observed on Windows 11 - the first UI instance dies with a .NET
+# exception 0xE0434352 while the daemon keeps updating in the background). Waiting on
+# that single PID returns mid-update, so we'd mirror an empty game folder and power
+# off while the download is still running. Instead we wait until NO process of this
+# name has existed for a sustained grace window - i.e. the whole launcher tree
+# (UI + update daemon) is gone, which is the real "user closed it / update finished"
+# signal, the same thing that ends a Windows 10 session.
+function Wait-LauncherClosed {
+    param([string]$Name, [int]$GraceSec = 45, [int]$StartupSec = 90)
+    # Let the launcher (or a watchdog relaunch) come up before "no process" counts as closed.
+    $deadline = (Get-Date).AddSeconds($StartupSec)
+    while ((Get-Date) -lt $deadline) {
+        if (@(Get-Process -Name $Name -ErrorAction SilentlyContinue).Count -gt 0) { break }
+        Start-Sleep -Seconds 2
+    }
+    # Now wait for the whole tree to stay gone for GraceSec (rides quick crash/relaunch gaps).
+    $goneSince = $null
+    while ($true) {
+        if (@(Get-Process -Name $Name -ErrorAction SilentlyContinue).Count -gt 0) {
+            $goneSince = $null
+        } else {
+            if ($null -eq $goneSince) { $goneSince = Get-Date }
+            elseif (((Get-Date) - $goneSince).TotalSeconds -ge $GraceSec) { return }
+        }
+        Start-Sleep -Seconds 3
+    }
+}
+
 # --------------------------------------------------------------------------- #
 try {
     Log "DU updater guest starting (tag '$ShareTag')."
@@ -197,9 +243,15 @@ try {
     if (-not $script:Share) { Log "Game share never mounted (VirtioFsSvc?). Aborting."; return }
     Log "Game share: $script:Share"
 
+    # Windows 11: the game lives on a local NTFS disk (the updater needs a real
+    # NTFS volume). Windows 10 uses the share directly.
+    $gameDisk = Find-GameDisk
+    $gameRoot = if ($gameDisk) { $gameDisk } else { $script:Share }
+    if ($gameDisk) { Log "Game disk (NTFS): $gameRoot; share is the Linux export target." }
+
     $cfg      = Read-Command -Path (Join-Path $script:Share "$ControlDir\command")
     $exe      = $cfg['LAUNCHER_EXE']
-    $launcher = Find-Launcher $script:Share $exe
+    $launcher = Find-Launcher $gameRoot $exe
     Log ("Command: ACTION={0} LAUNCHER_EXE={1}" -f $cfg['ACTION'], $exe)
 
     # Inspection mode: give a normal desktop instead of the launcher, and stay
@@ -211,19 +263,25 @@ try {
     }
 
     if ($cfg['ACTION'] -eq 'install' -or -not $launcher) {
-        Install-MyDU -Url $cfg['INSTALLER_URL'] -ShareRoot $script:Share
-        $launcher = Find-Launcher $script:Share $exe
+        Install-MyDU -Url $cfg['INSTALLER_URL'] -Root $gameRoot
+        $launcher = Find-Launcher $gameRoot $exe
     }
 
     if ($launcher) {
         Log "Launching $launcher"
-        $p = Start-Process -FilePath $launcher -WorkingDirectory (Split-Path $launcher -Parent) -PassThru -WindowStyle Maximized
-        Manage-LauncherWindow -Name ([IO.Path]::GetFileNameWithoutExtension($launcher))
-        $p.WaitForExit()
-        Log "Launcher exited (code $($p.ExitCode))."
+        $exeBase = [IO.Path]::GetFileNameWithoutExtension($launcher)
+        Start-Process -FilePath $launcher -WorkingDirectory (Split-Path $launcher -Parent) -WindowStyle Maximized | Out-Null
+        Manage-LauncherWindow -Name $exeBase
+        # Wait for the full launcher tree (UI + background update daemon) to close,
+        # not just the first process - the update runs in a detached daemon.
+        Wait-LauncherClosed -Name $exeBase
+        Log "Launcher closed (update session finished)."
     } else {
         Log "Launcher still not present after install; nothing to run."
     }
+
+    # Windows 11: export the updated game to the share so Linux can play it.
+    if ($gameDisk) { Mirror-ToShare -GameRoot $gameRoot -ShareRoot $script:Share }
 }
 catch {
     Log ("ERROR: " + $_.Exception.Message)

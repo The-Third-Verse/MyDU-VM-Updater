@@ -56,6 +56,13 @@ FIRMWARE_BLOCK=""
 SMM_FEATURE=""
 TPM_DEVICE=""
 
+# Dedicated NTFS game disk — Windows 11 only. The DU updater needs a real NTFS
+# volume (it fails on the VirtIO-FS share), so on Win11 the game installs to this
+# local disk and the guest mirrors it back to the share. Empty for Windows 10.
+GAME_DISK=""
+GAME_DISK_PATH=""
+GAME_DISK_SIZE="60G"
+
 # Unattended-install options and rendered fragments.
 UNATTENDED=0
 LOCALE="en-US"
@@ -240,13 +247,26 @@ have_iso_tool() {
 
 # Fill the firmware/TPM template slots for Windows 11 (UEFI + Secure Boot + TPM).
 # Left empty for Windows 10 (legacy BIOS).
+
+# Second (game) disk XML — Windows 11 only.
+game_disk_xml() {
+    cat <<XML
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' cache='writeback' io='threads' discard='unmap'/>
+      <source file='$GAME_DISK_PATH'/>
+      <target dev='vdb' bus='virtio'/>
+    </disk>
+XML
+}
+
 configure_firmware() {
     [ "$WIN11" -eq 1 ] || return 0
-    info "Windows 11 mode: UEFI + Secure Boot + emulated TPM 2.0"
+    info "Windows 11 mode: UEFI + Secure Boot + emulated TPM 2.0 + NTFS game disk"
     OS_FIRMWARE_ATTR=" firmware='efi'"
     FIRMWARE_BLOCK=$'    <firmware>\n      <feature enabled=\'yes\' name=\'enrolled-keys\'/>\n      <feature enabled=\'yes\' name=\'secure-boot\'/>\n    </firmware>\n    <loader secure=\'yes\'/>\n'
     SMM_FEATURE=$'    <smm state=\'on\'/>\n'
     TPM_DEVICE=$'    <tpm model=\'tpm-crb\'>\n      <backend type=\'emulator\' version=\'2.0\'/>\n    </tpm>\n'
+    GAME_DISK="$(game_disk_xml)"
 
     # Windows 11 needs more room than the Win10 defaults.
     [ "$RAM_SET" -eq 0 ]  && MEM_MIB=6144
@@ -263,6 +283,7 @@ resolve_paths() {
     UNATTEND_TEMPLATE="$REPO_DIR/windows/autounattend.xml.in"
 
     [ -n "$DISK_PATH" ] || DISK_PATH="$DATA_HOME/$VM_NAME.qcow2"
+    [ -n "$GAME_DISK_PATH" ] || GAME_DISK_PATH="$DATA_HOME/$VM_NAME-game.qcow2"
     if [ -n "$GAME_DIR" ]; then
         mkdir -p "$GAME_DIR"
         GAME_DIR="$(cd "$GAME_DIR" && pwd -P)"
@@ -278,6 +299,17 @@ create_disk() {
     mkdir -p "$(dirname "$DISK_PATH")"
     info "Creating ${DISK_SIZE} qcow2 disk at $DISK_PATH"
     qemu-img create -f qcow2 "$DISK_PATH" "$DISK_SIZE" >/dev/null
+}
+
+# Windows 11 only: the dedicated NTFS game disk (see GAME_DISK note).
+create_game_disk() {
+    [ "$WIN11" -eq 1 ] || return 0
+    if [ -f "$GAME_DISK_PATH" ] && [ "$RECREATE" -eq 0 ]; then
+        info "Game disk already exists: $GAME_DISK_PATH"
+        return 0
+    fi
+    info "Creating ${GAME_DISK_SIZE} qcow2 game disk at $GAME_DISK_PATH"
+    qemu-img create -f qcow2 "$GAME_DISK_PATH" "$GAME_DISK_SIZE" >/dev/null
 }
 
 fetch_virtio_iso() {
@@ -308,8 +340,8 @@ render_and_define() {
     VM_NAME="$VM_NAME" MEM_KIB="$mem_kib" VCPUS="$VCPUS" \
     DISK_PATH="$DISK_PATH" GAME_DIR="$GAME_DIR" SHARE_TAG="$SHARE_TAG" \
     OS_FIRMWARE_ATTR="$OS_FIRMWARE_ATTR" FIRMWARE_BLOCK="$FIRMWARE_BLOCK" \
-    SMM_FEATURE="$SMM_FEATURE" TPM_DEVICE="$TPM_DEVICE" \
-        envsubst '${VM_NAME} ${MEM_KIB} ${VCPUS} ${DISK_PATH} ${GAME_DIR} ${SHARE_TAG} ${OS_FIRMWARE_ATTR} ${FIRMWARE_BLOCK} ${SMM_FEATURE} ${TPM_DEVICE}' \
+    SMM_FEATURE="$SMM_FEATURE" TPM_DEVICE="$TPM_DEVICE" GAME_DISK="$GAME_DISK" \
+        envsubst '${VM_NAME} ${MEM_KIB} ${VCPUS} ${DISK_PATH} ${GAME_DIR} ${SHARE_TAG} ${OS_FIRMWARE_ATTR} ${FIRMWARE_BLOCK} ${SMM_FEATURE} ${TPM_DEVICE} ${GAME_DISK}' \
         <"$TEMPLATE" >"$xml"
 
     info "Defining libvirt domain '$VM_NAME'"
@@ -407,12 +439,16 @@ attach_install_media_and_start() {
     virsh_ start "$VM_NAME" >/dev/null
 
     if [ "$UNATTENDED" -eq 1 ]; then
-        # First boot only: press a key past the firmware "Press any key to boot
-        # from CD or DVD" prompt (the disk is empty, so it won't fall through).
-        # Needed for UEFI/Windows 11; harmless otherwise. Background, ~24s.
-        ( for _ in $(seq 1 12); do
+        # First boot only: the UEFI/Windows ISO shows "Press any key to boot from
+        # CD or DVD" for only ~5s; miss it and the firmware falls through to the
+        # empty disk and stops at "No bootable option or device was found".
+        # Windows 11's first-boot POST (Secure Boot key enrollment + emulated TPM)
+        # is slow AND variable, so a fixed short burst can finish before the prompt
+        # even appears. Spam a key densely for ~90s so we reliably land inside that
+        # short window whenever POST gets there. Harmless on Windows 10. Background.
+        ( for _ in $(seq 1 60); do
             virsh_ send-key "$VM_NAME" --codeset linux KEY_ENTER >/dev/null 2>&1 || true
-            sleep 2
+            sleep 1.5
           done ) &
     fi
 
@@ -549,6 +585,7 @@ Download one from Microsoft:
     fi
 
     create_disk
+    create_game_disk
     fetch_virtio_iso
     render_and_define >/dev/null
     if [ "$UNATTENDED" -eq 1 ] || have_iso_tool; then

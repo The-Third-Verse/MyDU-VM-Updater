@@ -38,7 +38,7 @@ command for your distro.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--win11` | off (Windows 10) | Provision Windows 11: UEFI + Secure Boot + emulated TPM 2.0 (needs `swtpm` + OVMF on the host). Also bumps the defaults to 6144 MiB RAM and 64 G disk unless overridden. |
+| `--win11` | off (Windows 10) | Provision Windows 11: UEFI + Secure Boot + emulated TPM 2.0 (needs `swtpm` + OVMF on the host). Also bumps the defaults to 6144 MiB RAM and 64 G disk, and **adds a dedicated NTFS game disk** — the DU updater needs a real NTFS volume, so on Win11 the game installs there and is mirrored to the share for Linux. |
 | `--locale LOC` | `en-US` | Unattended-install locale / keyboard layout. |
 | `--product-key KEY` | Win 10/11 Pro generic | Edition-selection key for `--unattended`. The default selects the Pro edition; it does **not** activate Windows. |
 
@@ -77,7 +77,8 @@ command for your distro.
 
 | File | Purpose |
 |------|---------|
-| `<vm>.qcow2` | the VM disk |
+| `<vm>.qcow2` | the VM (OS) disk |
+| `<vm>-game.qcow2` | NTFS game disk (Windows 11 only) |
 | `virtio-win.iso` | cached VirtIO driver ISO |
 | `<vm>.xml` | rendered libvirt domain definition |
 | `du-guest.iso` | guest scripts CD (+ `autounattend.xml` when `--unattended`) |
